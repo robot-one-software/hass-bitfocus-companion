@@ -71,8 +71,9 @@
       },
       "http_settings": {
         "title": "Companion HTTP API",
-        "description": "Variables are read over Companion's HTTP API, which runs on the same port as its web interface (8000 by default). Companion listens on localhost only unless you change the interface in the Companion launcher window to your network address. Home Assistant will test {host} on this port before saving.",
+        "description": "Variables are read over Companion's HTTP API, which runs on the same port as Companion's web interface (8000 by default). Companion listens on localhost only unless you change the interface in the Companion launcher window; choose all interfaces (0.0.0.0) there if you can. Leave the host empty to use {host}, the address the satellite connection uses, or enter the address Companion's web interface listens on. Home Assistant tests the address before saving.",
         "data": {
+          "http_host": "HTTP host (optional)",
           "http_port": "HTTP port",
           "poll_interval": "Poll every"
         }
@@ -99,7 +100,7 @@
       "subscriptions_disabled": "Companion's Button Subscriptions API is switched off. Enable it under Settings > Protocols in Companion.",
       "cannot_connect": "Companion did not answer while scanning. Try again.",
       "nothing_found": "No buttons with text or colour on that page. Check the page number and grid size.",
-      "http_unreachable": "Companion's HTTP API did not answer. Check the port, and that Companion's launcher is set to listen on your network address rather than localhost.",
+      "http_unreachable": "Companion's HTTP API did not answer at {url}. Check the host and port, and that Companion's launcher is set to listen on that address (or all interfaces) rather than localhost.",
       "invalid_variable": "Could not read these as variable names: {missing}. Use label:name, for example RCV:combo1_livelevelL.",
       "variables_not_found": "Companion does not know these variables: {missing}. Check the spelling in Companion's Variables tab."
     }

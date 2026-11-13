@@ -41,8 +41,10 @@ on your network; nothing goes through the cloud.
 - For **variables** only: Companion's HTTP API must be reachable from Home
   Assistant. Companion listens on localhost by default. In the Companion
   launcher window (the small Companion app, not the web settings) change the
-  interface it listens on from 127.0.0.1 to the computer's network address or
-  all interfaces. Port 8000 unless you changed it.
+  interface it listens on from 127.0.0.1 to **all interfaces (0.0.0.0)**, or to
+  the address Home Assistant can reach. Port 8000 unless you changed it. If you
+  pick a single address that differs from the one the integration discovered,
+  enter it as the HTTP host under **Configure → HTTP API settings**.
 
 ## Install
 
@@ -162,8 +164,12 @@ feedback.
 - **Entities unavailable**: the server is disconnected or subscriptions are off.
   The **Connected** sensor tells you which.
 - **Variable sensors unavailable / "HTTP API is not reachable"**: Companion's
-  web interface is bound to localhost. Change the interface in the Companion
-  launcher window, or fix the port under **Configure → HTTP API settings**.
+  web interface is bound to localhost or to an address Home Assistant cannot
+  reach. Set the launcher to all interfaces, or enter the right host and port
+  under **Configure → HTTP API settings**. The error shows the URL that was tried.
+- **Menu items without labels after an update**: the browser is showing cached
+  translations from the previous version. Hard-refresh the Home Assistant page
+  (Cmd/Ctrl+Shift+R) or open it in a private window.
 
 ## Not yet included
 

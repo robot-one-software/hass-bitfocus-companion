@@ -7,6 +7,7 @@ from datetime import timedelta
 
 import aiohttp
 import pytest
+import pytest_socket
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
@@ -16,7 +17,13 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
-from custom_components.bitfocus_companion.const import CONF_HTTP_PORT, CONF_POLL_INTERVAL, CONF_VARIABLES, DOMAIN
+from custom_components.bitfocus_companion.const import (
+    CONF_HTTP_HOST,
+    CONF_HTTP_PORT,
+    CONF_POLL_INTERVAL,
+    CONF_VARIABLES,
+    DOMAIN,
+)
 from custom_components.bitfocus_companion.http_api import (
     CompanionHttpClient,
     CompanionHttpError,
@@ -188,6 +195,8 @@ async def test_options_add_and_remove_variables(
 async def test_options_http_settings(
     hass: HomeAssistant, fake_companion: FakeCompanion, fake_http: FakeCompanionHttp
 ) -> None:
+    # The harness allows 127.0.0.1 only; this test also talks to the IPv6 loopback.
+    pytest_socket.socket_allow_hosts(["127.0.0.1", "::1"], allow_unix_socket=True)
     entry = await _setup(hass, fake_companion.port, 1, [])
     result = await hass.config_entries.options.async_init(entry.entry_id)
     result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "http_settings"})
@@ -196,10 +205,26 @@ async def test_options_http_settings(
         result["flow_id"], {CONF_HTTP_PORT: 1, CONF_POLL_INTERVAL: 2}
     )
     assert result["errors"] == {"base": "http_unreachable"}
+    assert result["description_placeholders"]["url"] == "http://127.0.0.1:1"
+    # A different host for the HTTP API than for the satellite socket is allowed.
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {CONF_HTTP_PORT: fake_http.port, CONF_POLL_INTERVAL: 2}
+        result["flow_id"], {CONF_HTTP_HOST: "::1", CONF_HTTP_PORT: fake_http.port, CONF_POLL_INTERVAL: 2}
     )
     await hass.async_block_till_done()
     assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_HTTP_HOST] == "::1"
     assert entry.options[CONF_HTTP_PORT] == fake_http.port
     assert entry.options[CONF_POLL_INTERVAL] == 2.0
+    assert entry.runtime_data.http.host == "::1"
+    assert entry.runtime_data.http.base_url == f"http://[::1]:{fake_http.port}"
+
+    # Leaving the host empty falls back to the satellite host and clears the override.
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "http_settings"})
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_HTTP_HOST: "", CONF_HTTP_PORT: fake_http.port, CONF_POLL_INTERVAL: 1}
+    )
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert CONF_HTTP_HOST not in entry.options
+    assert entry.runtime_data.http.host == "127.0.0.1"

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1
+
+- *HTTP API settings* gains an optional **HTTP host**, for Companion installs
+  whose web interface listens on a different address than the satellite
+  connection uses (a VPN address, for example). Errors now show the exact URL
+  that was tried.
+
 ## 0.2.0
 
 - **Variables.** Pick Companion variables by name under *Configure → Add

@@ -26,6 +26,7 @@ from .const import (
     ATTR_SERVER,
     ATTR_TEXT,
     CONF_COLUMN,
+    CONF_HTTP_HOST,
     CONF_HTTP_PORT,
     CONF_PAGE,
     CONF_POLL_INTERVAL,
@@ -155,7 +156,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: CompanionConfigEntry) ->
     buttons = buttons_from_options(entry.options)
     variables = variables_from_options(entry.options)
     http = CompanionHttpClient(
-        async_get_clientsession(hass), host, int(entry.options.get(CONF_HTTP_PORT, DEFAULT_HTTP_PORT))
+        async_get_clientsession(hass),
+        str(entry.options.get(CONF_HTTP_HOST) or host),
+        int(entry.options.get(CONF_HTTP_PORT, DEFAULT_HTTP_PORT)),
     )
     coordinator: VariablesCoordinator | None = None
     if variables:

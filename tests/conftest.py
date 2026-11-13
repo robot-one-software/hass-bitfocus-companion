@@ -184,6 +184,8 @@ class FakeCompanionHttp:
         site = web.TCPSite(self._runner, "127.0.0.1", self.port)
         await site.start()
         self.port = site._server.sockets[0].getsockname()[1]  # noqa: SLF001
+        # Also answer on IPv6 loopback, so tests can use a second address without DNS.
+        await web.TCPSite(self._runner, "::1", self.port).start()
 
     async def stop(self) -> None:
         if self._runner is not None:

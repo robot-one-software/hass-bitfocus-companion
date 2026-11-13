@@ -26,6 +26,7 @@ from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from .const import (
     CONF_BUTTONS,
     CONF_COLUMN,
+    CONF_HTTP_HOST,
     CONF_HTTP_PORT,
     CONF_MACHINE_ID,
     CONF_PAGE,
@@ -99,6 +100,7 @@ SCAN_SCHEMA = vol.Schema(
 
 HTTP_SETTINGS_SCHEMA = vol.Schema(
     {
+        vol.Optional(CONF_HTTP_HOST): TextSelector(),
         vol.Required(CONF_HTTP_PORT, default=DEFAULT_HTTP_PORT): NumberSelector(
             NumberSelectorConfig(min=1, max=65535, mode=NumberSelectorMode.BOX)
         ),
@@ -232,8 +234,9 @@ class CompanionOptionsFlow(OptionsFlow):
         options.append("http_settings")
         return self.async_show_menu(step_id="init", menu_options=options)
 
-    def _http_client(self, port: int | None = None) -> CompanionHttpClient:
-        host = self.config_entry.data[CONF_HOST]
+    def _http_client(self, host: str | None = None, port: int | None = None) -> CompanionHttpClient:
+        if not host:
+            host = str(self.config_entry.options.get(CONF_HTTP_HOST) or self.config_entry.data[CONF_HOST])
         if port is None:
             port = int(self.config_entry.options.get(CONF_HTTP_PORT, DEFAULT_HTTP_PORT))
         return CompanionHttpClient(async_get_clientsession(self.hass), host, port)
@@ -241,22 +244,30 @@ class CompanionOptionsFlow(OptionsFlow):
     async def async_step_http_settings(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Where Companion's HTTP API lives and how often variables are polled."""
         errors: dict[str, str] = {}
-        placeholders = {"host": self.config_entry.data[CONF_HOST]}
+        satellite_host = self.config_entry.data[CONF_HOST]
+        placeholders = {"host": satellite_host, "url": ""}
         if user_input is not None:
+            host = str(user_input.get(CONF_HTTP_HOST, "")).strip()
             port = int(user_input[CONF_HTTP_PORT])
+            client = self._http_client(host or satellite_host, port)
+            placeholders["url"] = client.base_url
             try:
-                await self._http_client(port).async_probe()
+                await client.async_probe()
             except CompanionHttpError:
                 errors["base"] = "http_unreachable"
             else:
-                return self.async_create_entry(
-                    data={
-                        **self.config_entry.options,
-                        CONF_HTTP_PORT: port,
-                        CONF_POLL_INTERVAL: float(user_input[CONF_POLL_INTERVAL]),
-                    }
-                )
+                options = {
+                    **self.config_entry.options,
+                    CONF_HTTP_PORT: port,
+                    CONF_POLL_INTERVAL: float(user_input[CONF_POLL_INTERVAL]),
+                }
+                if host and host != satellite_host:
+                    options[CONF_HTTP_HOST] = host
+                else:
+                    options.pop(CONF_HTTP_HOST, None)
+                return self.async_create_entry(data=options)
         suggested = user_input or {
+            CONF_HTTP_HOST: self.config_entry.options.get(CONF_HTTP_HOST, ""),
             CONF_HTTP_PORT: self.config_entry.options.get(CONF_HTTP_PORT, DEFAULT_HTTP_PORT),
             CONF_POLL_INTERVAL: self.config_entry.options.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
         }
@@ -270,8 +281,8 @@ class CompanionOptionsFlow(OptionsFlow):
     async def async_step_add_variables(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Add one or more variables by name, checking each against Companion."""
         errors: dict[str, str] = {}
-        placeholders: dict[str, str] = {"missing": ""}
         http = self._http_client()
+        placeholders: dict[str, str] = {"missing": "", "url": http.base_url}
         labels: list[str] = []
         try:
             connections = await http.async_get_connections()
