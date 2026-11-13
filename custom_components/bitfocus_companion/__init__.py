@@ -17,6 +17,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.typing import ConfigType
 
@@ -25,18 +26,24 @@ from .const import (
     ATTR_SERVER,
     ATTR_TEXT,
     CONF_COLUMN,
+    CONF_HTTP_PORT,
     CONF_PAGE,
+    CONF_POLL_INTERVAL,
     CONF_ROW,
     CONNECT_TIMEOUT,
+    DEFAULT_POLL_INTERVAL,
     DOMAIN,
     EVENT_BUTTON,
+    ISSUE_HTTP_UNREACHABLE,
     ISSUE_SUBSCRIPTIONS,
     ISSUE_TOO_OLD,
     MIN_SUBSCRIPTION_API,
     signal_connection,
     signal_state,
 )
-from .helpers import ButtonConfig, buttons_from_options
+from .coordinator import VariablesCoordinator
+from .helpers import ButtonConfig, VariableConfig, buttons_from_options, variables_from_options
+from .http_api import DEFAULT_HTTP_PORT, CompanionHttpClient
 from .satellite import (
     DEFAULT_PORT,
     ButtonState,
@@ -63,6 +70,9 @@ class CompanionRuntime:
 
     client: CompanionSatelliteClient
     buttons: list[ButtonConfig]
+    http: CompanionHttpClient
+    variables: list[VariableConfig]
+    coordinator: VariablesCoordinator | None = None
     available: bool = True
 
 
@@ -143,8 +153,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: CompanionConfigEntry) ->
         raise ConfigEntryNotReady(f"Cannot connect to Companion at {host}:{port}") from err
 
     buttons = buttons_from_options(entry.options)
-    entry.runtime_data = CompanionRuntime(client=client, buttons=buttons)
-    _prune_removed_buttons(hass, entry, buttons)
+    variables = variables_from_options(entry.options)
+    http = CompanionHttpClient(
+        async_get_clientsession(hass), host, int(entry.options.get(CONF_HTTP_PORT, DEFAULT_HTTP_PORT))
+    )
+    coordinator: VariablesCoordinator | None = None
+    if variables:
+        coordinator = VariablesCoordinator(
+            hass, entry, http, variables, float(entry.options.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL))
+        )
+        # A first failure must not block setup: sensors start unavailable and a Repairs
+        # issue explains that the HTTP API could not be reached.
+        await coordinator.async_refresh()
+    else:
+        ir.async_delete_issue(hass, DOMAIN, f"{ISSUE_HTTP_UNREACHABLE}_{entry.entry_id}")
+    entry.runtime_data = CompanionRuntime(
+        client=client, buttons=buttons, http=http, variables=variables, coordinator=coordinator
+    )
+    _prune_removed_entities(hass, entry, buttons, variables)
 
     for button in buttons:
         try:
@@ -165,6 +191,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: CompanionConfigEntry) -
     await entry.runtime_data.client.async_stop()
     ir.async_delete_issue(hass, DOMAIN, f"{ISSUE_SUBSCRIPTIONS}_{entry.entry_id}")
     ir.async_delete_issue(hass, DOMAIN, f"{ISSUE_TOO_OLD}_{entry.entry_id}")
+    ir.async_delete_issue(hass, DOMAIN, f"{ISSUE_HTTP_UNREACHABLE}_{entry.entry_id}")
     return unload_ok
 
 
@@ -174,13 +201,17 @@ async def _async_update_listener(hass: HomeAssistant, entry: CompanionConfigEntr
 
 
 @callback
-def _prune_removed_buttons(hass: HomeAssistant, entry: CompanionConfigEntry, buttons: list[ButtonConfig]) -> None:
-    """Drop registry entries for buttons the user removed from the options."""
+def _prune_removed_entities(
+    hass: HomeAssistant, entry: CompanionConfigEntry, buttons: list[ButtonConfig], variables: list[VariableConfig]
+) -> None:
+    """Drop registry entries for buttons and variables the user removed from the options."""
     keep = {f"{entry.entry_id}_connected"}
     for button in buttons:
         location = button.location
         prefix = f"{entry.entry_id}_{location.page}_{location.row}_{location.column}"
         keep.update({f"{prefix}_press", f"{prefix}_state"})
+    for variable in variables:
+        keep.add(variable_unique_id(entry, variable))
     registry = er.async_get(hass)
     for registry_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
         if registry_entry.unique_id not in keep:
@@ -223,3 +254,7 @@ def _update_issues(hass: HomeAssistant, entry: CompanionConfigEntry, client: Com
         )
     else:
         ir.async_delete_issue(hass, DOMAIN, subs_id)
+
+
+def variable_unique_id(entry: ConfigEntry, variable: VariableConfig) -> str:
+    return f"{entry.entry_id}_var_{variable.ref.label}_{variable.ref.name}"

@@ -9,6 +9,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT
 from homeassistant.core import callback
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
@@ -18,11 +19,32 @@ from homeassistant.helpers.selector import (
     SelectSelectorConfig,
     SelectSelectorMode,
     TextSelector,
+    TextSelectorConfig,
 )
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
-from .const import CONF_BUTTONS, CONF_COLUMN, CONF_MACHINE_ID, CONF_PAGE, CONF_ROW, DOMAIN
-from .helpers import buttons_from_options
+from .const import (
+    CONF_BUTTONS,
+    CONF_COLUMN,
+    CONF_HTTP_PORT,
+    CONF_MACHINE_ID,
+    CONF_PAGE,
+    CONF_POLL_INTERVAL,
+    CONF_ROW,
+    CONF_UNIT,
+    CONF_VARIABLES,
+    DEFAULT_POLL_INTERVAL,
+    DOMAIN,
+)
+from .helpers import buttons_from_options, variables_from_options
+from .http_api import (
+    DEFAULT_HTTP_PORT,
+    CompanionHttpClient,
+    CompanionHttpError,
+    CompanionHttpNotFound,
+    VariableRef,
+    parse_variable_ref,
+)
 from .satellite import (
     DEFAULT_PORT,
     ButtonState,
@@ -70,6 +92,18 @@ SCAN_SCHEMA = vol.Schema(
         ),
         vol.Required("max_column", default=7): NumberSelector(
             NumberSelectorConfig(min=0, max=31, mode=NumberSelectorMode.BOX)
+        ),
+    }
+)
+
+
+HTTP_SETTINGS_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_HTTP_PORT, default=DEFAULT_HTTP_PORT): NumberSelector(
+            NumberSelectorConfig(min=1, max=65535, mode=NumberSelectorMode.BOX)
+        ),
+        vol.Required(CONF_POLL_INTERVAL, default=DEFAULT_POLL_INTERVAL): NumberSelector(
+            NumberSelectorConfig(min=0.5, max=60, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="s")
         ),
     }
 )
@@ -192,7 +226,144 @@ class CompanionOptionsFlow(OptionsFlow):
         options = ["scan_page", "add_button"]
         if self.config_entry.options.get(CONF_BUTTONS):
             options.append("remove_button")
+        options.append("add_variables")
+        if self.config_entry.options.get(CONF_VARIABLES):
+            options.append("remove_variables")
+        options.append("http_settings")
         return self.async_show_menu(step_id="init", menu_options=options)
+
+    def _http_client(self, port: int | None = None) -> CompanionHttpClient:
+        host = self.config_entry.data[CONF_HOST]
+        if port is None:
+            port = int(self.config_entry.options.get(CONF_HTTP_PORT, DEFAULT_HTTP_PORT))
+        return CompanionHttpClient(async_get_clientsession(self.hass), host, port)
+
+    async def async_step_http_settings(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Where Companion's HTTP API lives and how often variables are polled."""
+        errors: dict[str, str] = {}
+        placeholders = {"host": self.config_entry.data[CONF_HOST]}
+        if user_input is not None:
+            port = int(user_input[CONF_HTTP_PORT])
+            try:
+                await self._http_client(port).async_probe()
+            except CompanionHttpError:
+                errors["base"] = "http_unreachable"
+            else:
+                return self.async_create_entry(
+                    data={
+                        **self.config_entry.options,
+                        CONF_HTTP_PORT: port,
+                        CONF_POLL_INTERVAL: float(user_input[CONF_POLL_INTERVAL]),
+                    }
+                )
+        suggested = user_input or {
+            CONF_HTTP_PORT: self.config_entry.options.get(CONF_HTTP_PORT, DEFAULT_HTTP_PORT),
+            CONF_POLL_INTERVAL: self.config_entry.options.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
+        }
+        return self.async_show_form(
+            step_id="http_settings",
+            data_schema=self.add_suggested_values_to_schema(HTTP_SETTINGS_SCHEMA, suggested),
+            errors=errors,
+            description_placeholders=placeholders,
+        )
+
+    async def async_step_add_variables(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Add one or more variables by name, checking each against Companion."""
+        errors: dict[str, str] = {}
+        placeholders: dict[str, str] = {"missing": ""}
+        http = self._http_client()
+        labels: list[str] = []
+        try:
+            connections = await http.async_get_connections()
+        except CompanionHttpError:
+            if user_input is None:
+                errors["base"] = "http_unreachable"
+        else:
+            labels = sorted({connection.label for connection in connections if connection.label})
+
+        if user_input is not None and "base" not in errors:
+            label = str(user_input.get("label", "")).strip()
+            refs: list[VariableRef] = []
+            bad: list[str] = []
+            for raw in str(user_input.get("names", "")).replace(",", "\n").splitlines():
+                token = raw.strip()
+                if not token:
+                    continue
+                ref = parse_variable_ref(token if ":" in token or not label else f"{label}:{token}")
+                if ref is None:
+                    bad.append(token)
+                else:
+                    refs.append(ref)
+            if bad or not refs:
+                errors["base"] = "invalid_variable"
+                placeholders["missing"] = ", ".join(bad)
+            else:
+                missing: list[str] = []
+                for ref in refs:
+                    try:
+                        await http.async_get_variable(ref)
+                    except CompanionHttpNotFound:
+                        missing.append(ref.key)
+                    except CompanionHttpError:
+                        errors["base"] = "http_unreachable"
+                        break
+                if "base" not in errors and missing:
+                    errors["base"] = "variables_not_found"
+                    placeholders["missing"] = ", ".join(missing)
+                if "base" not in errors:
+                    existing = list(self.config_entry.options.get(CONF_VARIABLES, []))
+                    known = {variable.ref.key for variable in variables_from_options(self.config_entry.options)}
+                    unit = str(user_input.get(CONF_UNIT, "")).strip()
+                    for ref in refs:
+                        if ref.key in known:
+                            continue
+                        item: dict[str, Any] = {"ref": ref.key}
+                        if unit:
+                            item[CONF_UNIT] = unit
+                        existing.append(item)
+                        known.add(ref.key)
+                    return self.async_create_entry(data={**self.config_entry.options, CONF_VARIABLES: existing})
+
+        label_options = [SelectOptionDict(value=label, label=label) for label in labels]
+        label_options.append(SelectOptionDict(value="custom", label="custom (Companion custom variables)"))
+        schema = vol.Schema(
+            {
+                vol.Optional("label"): SelectSelector(
+                    SelectSelectorConfig(options=label_options, custom_value=True, mode=SelectSelectorMode.DROPDOWN)
+                ),
+                vol.Required("names"): TextSelector(TextSelectorConfig(multiline=True)),
+                vol.Optional(CONF_UNIT): TextSelector(),
+            }
+        )
+        return self.async_show_form(
+            step_id="add_variables",
+            data_schema=self.add_suggested_values_to_schema(schema, user_input),
+            errors=errors,
+            description_placeholders=placeholders,
+        )
+
+    async def async_step_remove_variables(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        variables = variables_from_options(self.config_entry.options)
+        if user_input is not None:
+            remove = set(user_input.get(CONF_VARIABLES, []))
+            remaining = [
+                item for item in self.config_entry.options.get(CONF_VARIABLES, []) if item.get("ref") not in remove
+            ]
+            return self.async_create_entry(data={**self.config_entry.options, CONF_VARIABLES: remaining})
+        choices = [
+            SelectOptionDict(value=variable.ref.key, label=f"{variable.display_name} ({variable.ref})")
+            for variable in variables
+        ]
+        return self.async_show_form(
+            step_id="remove_variables",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_VARIABLES): SelectSelector(
+                        SelectSelectorConfig(options=choices, multiple=True, mode=SelectSelectorMode.LIST)
+                    )
+                }
+            ),
+        )
 
     async def async_step_scan_page(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Look at every cell of one Companion page and offer the ones with something on them."""

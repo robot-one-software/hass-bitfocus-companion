@@ -14,22 +14,32 @@ CONF_PAGE = "page"
 CONF_ROW = "row"
 CONF_COLUMN = "column"
 CONF_MACHINE_ID = "machine_id"
+CONF_HTTP_PORT = "http_port"
+CONF_VARIABLES = "variables"
+CONF_POLL_INTERVAL = "poll_interval"
+CONF_UNIT = "unit"
+
+DEFAULT_POLL_INTERVAL = 1.0
 
 ATTR_SERVER = "server"
 ATTR_DIRECTION = "direction"
 ATTR_AMOUNT = "amount"
 ATTR_PRESSED = "pressed"
 ATTR_TEXT = "text"
+ATTR_VALUE = "value"
+ATTR_NAME = "name"
 
 SERVICE_PRESS = "press"
 SERVICE_DOWN = "down"
 SERVICE_UP = "up"
 SERVICE_ROTATE = "rotate"
+SERVICE_SET_CUSTOM_VARIABLE = "set_custom_variable"
 
 EVENT_BUTTON = f"{DOMAIN}_button"
 
 ISSUE_SUBSCRIPTIONS = "subscriptions_disabled"
 ISSUE_TOO_OLD = "companion_too_old"
+ISSUE_HTTP_UNREACHABLE = "http_unreachable"
 
 # Companion gained button subscriptions with satellite API 1.10 (Companion 4.3).
 MIN_SUBSCRIPTION_API = (1, 10, 0)

@@ -89,7 +89,7 @@ async def test_options_flow_add_and_remove(hass: HomeAssistant, fake_companion: 
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] is FlowResultType.MENU
-    assert result["menu_options"] == ["scan_page", "add_button"]
+    assert result["menu_options"] == ["scan_page", "add_button", "add_variables", "http_settings"]
 
     result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "add_button"})
     assert result["type"] is FlowResultType.FORM

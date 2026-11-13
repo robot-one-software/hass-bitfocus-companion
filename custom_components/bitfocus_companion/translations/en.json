@@ -31,7 +31,10 @@
         "menu_options": {
           "scan_page": "Add buttons from a page",
           "add_button": "Add one button by position",
-          "remove_button": "Remove buttons"
+          "remove_button": "Remove buttons",
+          "add_variables": "Add variables",
+          "remove_variables": "Remove variables",
+          "http_settings": "HTTP API settings (variables)"
         }
       },
       "add_button": {
@@ -65,6 +68,29 @@
         "data": {
           "buttons": "Buttons"
         }
+      },
+      "http_settings": {
+        "title": "Companion HTTP API",
+        "description": "Variables are read over Companion's HTTP API, which runs on the same port as its web interface (8000 by default). Companion listens on localhost only unless you change the interface in the Companion launcher window to your network address. Home Assistant will test {host} on this port before saving.",
+        "data": {
+          "http_port": "HTTP port",
+          "poll_interval": "Poll every"
+        }
+      },
+      "add_variables": {
+        "title": "Add Companion variables",
+        "description": "Pick the connection, then paste variable names one per line (or label:name / $(label:name) to mix connections). Copy names from Companion's Variables tab. Each becomes a sensor. Give a unit (for example dB) to get numeric sensors with graphs.",
+        "data": {
+          "label": "Connection",
+          "names": "Variable names",
+          "unit": "Unit (optional, numeric variables only)"
+        }
+      },
+      "remove_variables": {
+        "title": "Remove variables",
+        "data": {
+          "variables": "Variables to remove"
+        }
       }
     },
     "error": {
@@ -72,7 +98,10 @@
       "not_connected": "Home Assistant is not connected to this Companion server right now.",
       "subscriptions_disabled": "Companion's Button Subscriptions API is switched off. Enable it under Settings > Protocols in Companion.",
       "cannot_connect": "Companion did not answer while scanning. Try again.",
-      "nothing_found": "No buttons with text or colour on that page. Check the page number and grid size."
+      "nothing_found": "No buttons with text or colour on that page. Check the page number and grid size.",
+      "http_unreachable": "Companion's HTTP API did not answer. Check the port, and that Companion's launcher is set to listen on your network address rather than localhost.",
+      "invalid_variable": "Could not read these as variable names: {missing}. Use label:name, for example RCV:combo1_livelevelL.",
+      "variables_not_found": "Companion does not know these variables: {missing}. Check the spelling in Companion's Variables tab."
     }
   },
   "issues": {
@@ -83,6 +112,10 @@
     "companion_too_old": {
       "title": "Companion is too old for this integration",
       "description": "{name} ({host}) is running Companion {version}. Button subscriptions need Companion 4.3 or newer. Update Companion, then reload the integration."
+    },
+    "http_unreachable": {
+      "title": "Companion's HTTP API is not reachable",
+      "description": "Variables for {name} are read from http://{host}:{port}/api, but it did not answer, so the variable sensors are unavailable.\n\nCompanion listens on localhost only by default. In the Companion launcher window change the interface it listens on to the computer's network address (or all interfaces), or correct the port under the integration's **Configure → HTTP API settings**."
     }
   },
   "services": {
@@ -181,6 +214,24 @@
           "description": "Which Companion server, by name. Only needed when more than one is set up."
         }
       }
+    },
+    "set_custom_variable": {
+      "name": "Set custom variable",
+      "description": "Set the value of a Companion custom variable. Numbers and true/false stay typed.",
+      "fields": {
+        "name": {
+          "name": "Variable name",
+          "description": "The custom variable's name as shown in Companion (without $(custom:…))."
+        },
+        "value": {
+          "name": "Value",
+          "description": "The new value."
+        },
+        "server": {
+          "name": "Server",
+          "description": "Which Companion server, by name. Only needed when more than one is set up."
+        }
+      }
     }
   },
   "selector": {
@@ -206,6 +257,12 @@
     },
     "command_failed": {
       "message": "Companion {name} did not accept the command: {error}"
+    },
+    "custom_variable_not_found": {
+      "message": "Companion {name} has no custom variable called \"{variable}\"."
+    },
+    "http_unreachable": {
+      "message": "Companion {name}'s HTTP API at {url} did not answer: {error}"
     }
   }
 }

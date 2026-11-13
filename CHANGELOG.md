@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0
+
+- **Variables.** Pick Companion variables by name under *Configure → Add
+  variables* and each becomes a sensor, polled over Companion's HTTP API (every
+  second by default, adjustable). Give a unit such as dB for numeric sensors with
+  history graphs. Custom variables work too (`custom:name`).
+- New service `bitfocus_companion.set_custom_variable` for writing values back,
+  the building block for sliders and faders.
+- *Configure → HTTP API settings* sets the port and poll interval and tests the
+  connection. A Repairs notice explains when Companion's HTTP API is not
+  reachable (Companion listens on localhost unless its launcher says otherwise).
+
 ## 0.1.1
 
 - Fix: the connection to Companion dropped and reconnected every few seconds.

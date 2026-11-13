@@ -139,3 +139,20 @@ rotate:
       required: false
       selector:
         text:
+
+set_custom_variable:
+  fields:
+    name:
+      required: true
+      example: fader_level
+      selector:
+        text:
+    value:
+      required: true
+      example: -12.5
+      selector:
+        text:
+    server:
+      required: false
+      selector:
+        text:

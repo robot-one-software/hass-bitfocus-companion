@@ -22,6 +22,8 @@ affiliated with Bitfocus.
 | **Services** `bitfocus_companion.press`, `down`, `up`, `rotate` | Act on any button by page / row / column. No setup per button. |
 | **Button entities** | One per Companion button you choose. Pressing it presses the Companion button. |
 | **Text sensors** | Live text of each chosen button, with background colour, text colour and pressed state as attributes. |
+| **Variable sensors** | Any Companion variable you name (ATEM fader gain, RØDECaster levels, tally, timecode, custom variables), polled every second. |
+| **Service** `bitfocus_companion.set_custom_variable` | Write a value into a Companion custom variable, for sliders and faders. |
 | **Event** `bitfocus_companion_button` | Fired when a chosen button is pressed or released anywhere, Stream Deck included. Use it as an automation trigger. |
 | **Connected** binary sensor | Per server, so you can see when Companion is down. |
 
@@ -36,6 +38,11 @@ on your network; nothing goes through the cloud.
 - One switch flipped in Companion: **Settings → Protocols → Enable Button
   Subscriptions API**. Without it Companion refuses button access and the
   integration shows a Repairs notice telling you so.
+- For **variables** only: Companion's HTTP API must be reachable from Home
+  Assistant. Companion listens on localhost by default. In the Companion
+  launcher window (the small Companion app, not the web settings) change the
+  interface it listens on from 127.0.0.1 to the computer's network address or
+  all interfaces. Port 8000 unless you changed it.
 
 ## Install
 
@@ -65,6 +72,21 @@ Each chosen button creates:
 - `button.<server>_<name>` — press it to press the Companion button.
 - `sensor.<server>_<name>_text` — the button's current text; attributes
   `background_color`, `text_color`, `pressed`, `font_size`, `button_type`.
+
+## Variables (optional)
+
+**Configure → Add variables**: choose the connection (the list comes from
+Companion), paste one or more variable names, one per line, as they appear in
+Companion's Variables tab, for example `combo1_livelevelL`. You can also paste
+full references like `$(atem:program_input)` or `custom:fader`. Companion is
+asked for each one before it is saved, so typos are caught immediately.
+
+Give a unit (for example `dB`) when the values are numbers: the sensor then gets
+a history graph and works in numeric conditions. Leave it blank for text such
+as input names or timecode.
+
+Each variable becomes `sensor.<server>_<connection>_<variable>` and is polled
+every second (change this under **Configure → HTTP API settings**).
 
 ## Use it
 
@@ -96,6 +118,14 @@ data: { page: 2, row: 0, column: 0, direction: left, amount: 3 }
 ```
 
 With more than one Companion server, add `server: "<name as shown in Home Assistant>"`.
+
+Write a custom variable (the usual way to drive a fader: a Companion Trigger
+watches the variable and runs the device action):
+
+```yaml
+action: bitfocus_companion.set_custom_variable
+data: { name: fader_level, value: -12.5 }
+```
 
 Trigger an automation from a Stream Deck press:
 
@@ -131,14 +161,15 @@ feedback.
   under **Settings → Protocols**.
 - **Entities unavailable**: the server is disconnected or subscriptions are off.
   The **Connected** sensor tells you which.
+- **Variable sensors unavailable / "HTTP API is not reachable"**: Companion's
+  web interface is bound to localhost. Change the interface in the Companion
+  launcher window, or fix the port under **Configure → HTTP API settings**.
 
 ## Not yet included
 
-Reading Companion *variables* (device levels, tally, timecode) and setting custom
-variables. Companion has no way to list its variables, so these will be chosen by
-name, and they need either Companion's HTTP API (which Companion binds to
-localhost unless you change the interface in its launcher) or a satellite surface
-with variables bound in Companion. Coming next.
+Companion has no API that lists variables, so they are chosen by name rather
+than from a full picker. A per-module suggestions catalogue and push updates
+faster than one per second are on the list.
 
 ## Development
 

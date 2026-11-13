@@ -13,7 +13,9 @@ from homeassistant.helpers import config_validation as cv
 from .const import (
     ATTR_AMOUNT,
     ATTR_DIRECTION,
+    ATTR_NAME,
     ATTR_SERVER,
+    ATTR_VALUE,
     CONF_COLUMN,
     CONF_PAGE,
     CONF_ROW,
@@ -21,8 +23,10 @@ from .const import (
     SERVICE_DOWN,
     SERVICE_PRESS,
     SERVICE_ROTATE,
+    SERVICE_SET_CUSTOM_VARIABLE,
     SERVICE_UP,
 )
+from .http_api import CompanionHttpError, CompanionHttpNotFound
 from .satellite import CompanionError, CompanionSubscriptionsDisabled, Location
 
 _LOCATION_FIELDS = {
@@ -33,6 +37,14 @@ _LOCATION_FIELDS = {
 }
 
 PRESS_SCHEMA = vol.Schema(_LOCATION_FIELDS)
+SET_CUSTOM_VARIABLE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_NAME): cv.string,
+        vol.Required(ATTR_VALUE): vol.Any(cv.string, vol.Coerce(float), bool, int, None),
+        vol.Optional(ATTR_SERVER): cv.string,
+    }
+)
+
 ROTATE_SCHEMA = vol.Schema(
     {
         **_LOCATION_FIELDS,
@@ -51,6 +63,9 @@ def async_setup_services(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, SERVICE_DOWN, partial(_async_handle, hass, SERVICE_DOWN), PRESS_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_UP, partial(_async_handle, hass, SERVICE_UP), PRESS_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_ROTATE, partial(_async_handle, hass, SERVICE_ROTATE), ROTATE_SCHEMA)
+    hass.services.async_register(
+        DOMAIN, SERVICE_SET_CUSTOM_VARIABLE, partial(_async_set_custom_variable, hass), SET_CUSTOM_VARIABLE_SCHEMA
+    )
 
 
 def _resolve_entry(hass: HomeAssistant, server: str | None):
@@ -98,4 +113,39 @@ async def _async_handle(hass: HomeAssistant, action: str, call: ServiceCall) -> 
             translation_domain=DOMAIN,
             translation_key="command_failed",
             translation_placeholders={"name": entry.title, "error": str(err)},
+        ) from err
+
+
+def _typed(value: object) -> object:
+    """Keep numbers and booleans typed; everything else goes across as text."""
+    if isinstance(value, (bool, int, float)) or value is None:
+        return value
+    text = str(value).strip()
+    lowered = text.lower()
+    if lowered in ("true", "false"):
+        return lowered == "true"
+    try:
+        number = float(text)
+    except ValueError:
+        return text
+    return int(number) if number.is_integer() and "." not in text else number
+
+
+async def _async_set_custom_variable(hass: HomeAssistant, call: ServiceCall) -> None:
+    entry = _resolve_entry(hass, call.data.get(ATTR_SERVER))
+    http = entry.runtime_data.http
+    name = call.data[ATTR_NAME]
+    try:
+        await http.async_set_custom_variable(name, _typed(call.data[ATTR_VALUE]))
+    except CompanionHttpNotFound as err:
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="custom_variable_not_found",
+            translation_placeholders={"name": entry.title, "variable": name},
+        ) from err
+    except CompanionHttpError as err:
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="http_unreachable",
+            translation_placeholders={"name": entry.title, "url": http.base_url, "error": str(err)},
         ) from err

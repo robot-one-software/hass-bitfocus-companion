@@ -7,6 +7,7 @@ import base64
 from collections.abc import AsyncIterator
 
 import pytest
+from aiohttp import web
 
 from custom_components.bitfocus_companion.satellite import format_message, parse_line
 
@@ -153,6 +154,73 @@ class FakeCompanion:
 @pytest.fixture
 async def fake_companion() -> AsyncIterator[FakeCompanion]:
     server = FakeCompanion()
+    await server.start()
+    yield server
+    await server.stop()
+
+
+class FakeCompanionHttp:
+    """Companion's HTTP API: variables, custom variables, connections."""
+
+    def __init__(self) -> None:
+        self.port = 0
+        self.variables: dict[str, str] = {"RCV:combo1_livelevelL": "-18.5", "atem:program_input": "2"}
+        self.custom: dict[str, object] = {"fader": "0"}
+        self.connections = [
+            {"id": "a1", "label": "RCV", "moduleId": "rode-rcv", "enabled": True, "status": {"category": "good"}},
+            {"id": "b2", "label": "atem", "moduleId": "bmd-atem", "enabled": True, "status": {"category": "good"}},
+        ]
+        self.requests = 0
+        self._runner: web.AppRunner | None = None
+
+    async def start(self) -> None:
+        app = web.Application()
+        app.router.add_get("/api/connections", self._connections)
+        app.router.add_get("/api/variable/{label}/{name}/value", self._variable)
+        app.router.add_get("/api/custom-variable/{name}/value", self._custom_get)
+        app.router.add_post("/api/custom-variable/{name}/value", self._custom_set)
+        self._runner = web.AppRunner(app)
+        await self._runner.setup()
+        site = web.TCPSite(self._runner, "127.0.0.1", self.port)
+        await site.start()
+        self.port = site._server.sockets[0].getsockname()[1]  # noqa: SLF001
+
+    async def stop(self) -> None:
+        if self._runner is not None:
+            await self._runner.cleanup()
+            self._runner = None
+
+    async def _connections(self, request: web.Request) -> web.Response:
+        self.requests += 1
+        return web.json_response(self.connections)
+
+    async def _variable(self, request: web.Request) -> web.Response:
+        self.requests += 1
+        key = f"{request.match_info['label']}:{request.match_info['name']}"
+        if key not in self.variables:
+            return web.Response(status=404, text="Not found")
+        return web.Response(text=self.variables[key])
+
+    async def _custom_get(self, request: web.Request) -> web.Response:
+        name = request.match_info["name"]
+        if name not in self.custom:
+            return web.Response(status=404, text="Not found")
+        return web.Response(text=str(self.custom[name]))
+
+    async def _custom_set(self, request: web.Request) -> web.Response:
+        name = request.match_info["name"]
+        if name not in self.custom:
+            return web.Response(status=404, text="Not found")
+        if request.content_type == "application/json":
+            self.custom[name] = await request.json()
+        else:
+            self.custom[name] = request.query.get("value", (await request.text()).strip())
+        return web.Response(text="ok")
+
+
+@pytest.fixture
+async def fake_http() -> AsyncIterator[FakeCompanionHttp]:
+    server = FakeCompanionHttp()
     await server.start()
     yield server
     await server.stop()
