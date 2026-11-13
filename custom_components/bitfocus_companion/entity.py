@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
 
 from . import CompanionConfigEntry
-from .const import DOMAIN, MANUFACTURER, MODEL, signal_connection, signal_state
+from .const import CONF_COLUMN, CONF_PAGE, CONF_ROW, DOMAIN, MANUFACTURER, MODEL, signal_button, signal_connection
 from .helpers import ButtonConfig
-from .satellite import ButtonState
+from .satellite import ButtonState, Location
+
+MAX_STATE_LENGTH = 255
 
 
 class CompanionEntity(Entity):
@@ -46,25 +50,62 @@ class CompanionEntity(Entity):
 
 
 class CompanionButtonEntity(CompanionEntity):
-    """An entity tied to one Companion button location."""
+    """An entity tied to one Companion button, followed by its control id when known."""
 
     def __init__(self, entry: CompanionConfigEntry, button: ButtonConfig) -> None:
         super().__init__(entry)
-        self._button = button
-        self._location = button.location
-        self._state: ButtonState | None = self._client.states.get(button.location)
+        self._key = button.key
+        self._initial = button
+
+    @property
+    def button(self) -> ButtonConfig:
+        return self._entry.runtime_data.button(self._key) or self._initial
+
+    @property
+    def location(self) -> Location:
+        return self._entry.runtime_data.location_of(self._key) or self._initial.location
+
+    @property
+    def button_state(self) -> ButtonState | None:
+        return self._client.states.get(self.location)
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         self.async_on_remove(
-            async_dispatcher_connect(self.hass, signal_state(self._entry.entry_id, self._location), self._handle_state)
+            async_dispatcher_connect(self.hass, signal_button(self._entry.entry_id, self._key), self._handle_update)
         )
 
     @callback
-    def _handle_state(self, state: ButtonState) -> None:
-        self._state = state
+    def _handle_update(self, state: ButtonState | None) -> None:
         self.async_write_ha_state()
 
     @property
     def available(self) -> bool:
-        return self._entry.runtime_data.available and self._client.subscriptions_supported
+        runtime = self._entry.runtime_data
+        return runtime.available and self._client.subscriptions_supported and runtime.button_exists(self._key)
+
+    def button_attributes(self) -> dict[str, Any]:
+        """Everything Companion tells us about the button, plus where it is."""
+        location = self.location
+        button = self.button
+        attributes: dict[str, Any] = {
+            CONF_PAGE: location.page,
+            CONF_ROW: location.row,
+            CONF_COLUMN: location.column,
+            "control_id": button.control_id,
+            "exists": self._entry.runtime_data.button_exists(self._key),
+        }
+        state = self.button_state
+        if state is not None:
+            attributes.update(
+                {
+                    "text": state.text,
+                    "label": state.label,
+                    "background_color": state.color,
+                    "text_color": state.text_color,
+                    "pressed": state.pressed,
+                    "font_size": state.font_size,
+                    "button_type": state.type,
+                }
+            )
+        return attributes

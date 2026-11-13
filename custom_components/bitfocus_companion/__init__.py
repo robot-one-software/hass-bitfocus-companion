@@ -1,14 +1,15 @@
 """Bitfocus Companion integration for Home Assistant.
 
 Connects to a Companion server over its satellite protocol so that Companion
-buttons can be pressed from Home Assistant and their state can be seen here.
+buttons can be pressed from Home Assistant and their state can be seen here, and
+reads Companion variables over its HTTP API.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
@@ -25,6 +26,8 @@ from .const import (
     ATTR_PRESSED,
     ATTR_SERVER,
     ATTR_TEXT,
+    CONF_BUTTON_SENSORS,
+    CONF_BUTTONS,
     CONF_COLUMN,
     CONF_HTTP_HOST,
     CONF_HTTP_PORT,
@@ -36,11 +39,12 @@ from .const import (
     DOMAIN,
     EVENT_BUTTON,
     ISSUE_HTTP_UNREACHABLE,
+    ISSUE_PAGES_UNAVAILABLE,
     ISSUE_SUBSCRIPTIONS,
     ISSUE_TOO_OLD,
     MIN_SUBSCRIPTION_API,
+    signal_button,
     signal_connection,
-    signal_state,
 )
 from .coordinator import VariablesCoordinator
 from .helpers import ButtonConfig, VariableConfig, buttons_from_options, variables_from_options
@@ -51,8 +55,10 @@ from .satellite import (
     CompanionError,
     CompanionSatelliteClient,
     CompanionSubscriptionsDisabled,
+    Location,
 )
 from .services import async_setup_services
+from .trpc import CompanionTrpcError, PageMap, PageMapWatcher, async_fetch_page_map
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,6 +81,35 @@ class CompanionRuntime:
     variables: list[VariableConfig]
     coordinator: VariablesCoordinator | None = None
     available: bool = True
+    # Button key -> where that button currently sits in Companion.
+    locations: dict[str, Location] = field(default_factory=dict)
+    page_map: PageMap | None = None
+    watcher: PageMapWatcher | None = None
+    suppress_reload: bool = False
+
+    def key_at(self, location: Location) -> str | None:
+        for key, current in self.locations.items():
+            if current == location:
+                return key
+        return None
+
+    def button(self, key: str) -> ButtonConfig | None:
+        for button in self.buttons:
+            if button.key == key:
+                return button
+        return None
+
+    def location_of(self, key: str) -> Location | None:
+        return self.locations.get(key)
+
+    def button_exists(self, key: str) -> bool:
+        """False once Companion's page map says the control is gone."""
+        button = self.button(key)
+        if button is None:
+            return False
+        if self.page_map is None or button.control_id is None:
+            return True
+        return button.control_id in self.page_map.controls
 
 
 type CompanionConfigEntry = ConfigEntry[CompanionRuntime]
@@ -93,7 +128,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: CompanionConfigEntry) ->
 
     @callback
     def _on_state(state: ButtonState, pressed_changed: bool) -> None:
-        async_dispatcher_send(hass, signal_state(entry.entry_id, state.location), state)
+        runtime: CompanionRuntime | None = getattr(entry, "runtime_data", None)
+        key = runtime.key_at(state.location) if runtime is not None else None
+        if key is not None:
+            async_dispatcher_send(hass, signal_button(entry.entry_id, key), state)
         if pressed_changed:
             hass.bus.async_fire(
                 EVENT_BUTTON,
@@ -103,6 +141,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CompanionConfigEntry) ->
                     CONF_PAGE: state.location.page,
                     CONF_ROW: state.location.row,
                     CONF_COLUMN: state.location.column,
+                    "control_id": runtime.button(key).control_id if runtime and key and runtime.button(key) else None,
                     ATTR_PRESSED: state.pressed,
                     ATTR_TEXT: state.text,
                 },
@@ -153,10 +192,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: CompanionConfigEntry) ->
         await client.async_stop()
         raise ConfigEntryNotReady(f"Cannot connect to Companion at {host}:{port}") from err
 
+    session = async_get_clientsession(hass)
     buttons = buttons_from_options(entry.options)
     variables = variables_from_options(entry.options)
     http = CompanionHttpClient(
-        async_get_clientsession(hass),
+        session,
         str(entry.options.get(CONF_HTTP_HOST) or host),
         int(entry.options.get(CONF_HTTP_PORT, DEFAULT_HTTP_PORT)),
     )
@@ -170,18 +210,47 @@ async def async_setup_entry(hass: HomeAssistant, entry: CompanionConfigEntry) ->
         await coordinator.async_refresh()
     else:
         ir.async_delete_issue(hass, DOMAIN, f"{ISSUE_HTTP_UNREACHABLE}_{entry.entry_id}")
-    entry.runtime_data = CompanionRuntime(
-        client=client, buttons=buttons, http=http, variables=variables, coordinator=coordinator
-    )
-    _prune_removed_entities(hass, entry, buttons, variables)
 
-    for button in buttons:
+    runtime = CompanionRuntime(client=client, buttons=buttons, http=http, variables=variables, coordinator=coordinator)
+    runtime.locations = {button.key: button.location for button in buttons}
+    entry.runtime_data = runtime
+
+    if buttons:
+        # Learn each button's stable control id and current position before entities exist,
+        # so unique ids are right from the start and moved buttons are found again.
         try:
-            await client.async_subscribe(button.location)
+            page_map = await async_fetch_page_map(session, http.host, http.port)
+        except CompanionTrpcError as err:
+            _LOGGER.debug("Page map unavailable at setup for %s: %s", entry.title, err)
+        else:
+            await _async_apply_page_map(hass, entry, runtime, page_map)
+
+    _prune_removed_entities(hass, entry, runtime)
+
+    for key, location in list(runtime.locations.items()):
+        try:
+            await client.async_subscribe(location)
         except CompanionSubscriptionsDisabled:
             break
         except CompanionError as err:
-            _LOGGER.warning("Could not subscribe to Companion button %s: %s", button.location, err)
+            _LOGGER.warning("Could not subscribe to Companion button %s at %s: %s", key, location, err)
+
+    if buttons:
+
+        @callback
+        def _on_page_map(page_map: PageMap) -> None:
+            entry.async_create_background_task(
+                hass, _async_apply_page_map(hass, entry, runtime, page_map), f"{DOMAIN} page map {entry.entry_id}"
+            )
+
+        @callback
+        def _on_watch_available(available: bool) -> None:
+            _update_pages_issue(hass, entry, available)
+
+        runtime.watcher = PageMapWatcher(session, http.host, http.port, _on_page_map, _on_watch_available)
+        runtime.watcher.start()
+    else:
+        ir.async_delete_issue(hass, DOMAIN, f"{ISSUE_PAGES_UNAVAILABLE}_{entry.entry_id}")
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -191,34 +260,136 @@ async def async_setup_entry(hass: HomeAssistant, entry: CompanionConfigEntry) ->
 async def async_unload_entry(hass: HomeAssistant, entry: CompanionConfigEntry) -> bool:
     """Disconnect from a Companion server."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    await entry.runtime_data.client.async_stop()
-    ir.async_delete_issue(hass, DOMAIN, f"{ISSUE_SUBSCRIPTIONS}_{entry.entry_id}")
-    ir.async_delete_issue(hass, DOMAIN, f"{ISSUE_TOO_OLD}_{entry.entry_id}")
-    ir.async_delete_issue(hass, DOMAIN, f"{ISSUE_HTTP_UNREACHABLE}_{entry.entry_id}")
+    runtime = entry.runtime_data
+    if runtime.watcher is not None:
+        await runtime.watcher.stop()
+    await runtime.client.async_stop()
+    for issue in (ISSUE_SUBSCRIPTIONS, ISSUE_TOO_OLD, ISSUE_HTTP_UNREACHABLE, ISSUE_PAGES_UNAVAILABLE):
+        ir.async_delete_issue(hass, DOMAIN, f"{issue}_{entry.entry_id}")
     return unload_ok
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: CompanionConfigEntry) -> None:
-    """Options changed: reload so the entity list matches."""
+    """Options changed: reload so the entity list matches (unless we wrote them ourselves)."""
+    runtime: CompanionRuntime | None = getattr(entry, "runtime_data", None)
+    if runtime is not None and runtime.suppress_reload:
+        runtime.suppress_reload = False
+        return
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-@callback
-def _prune_removed_entities(
-    hass: HomeAssistant, entry: CompanionConfigEntry, buttons: list[ButtonConfig], variables: list[VariableConfig]
+async def _async_apply_page_map(
+    hass: HomeAssistant, entry: CompanionConfigEntry, runtime: CompanionRuntime, page_map: PageMap
 ) -> None:
-    """Drop registry entries for buttons and variables the user removed from the options."""
+    """Reconcile configured buttons with Companion's page map.
+
+    Buttons without a control id get one from their position; buttons whose control has
+    moved are followed to the new position and resubscribed. Changes are persisted to the
+    options, and the entry is reloaded only when a key changed (so entities get new ids).
+    """
+    runtime.page_map = page_map
+    registry = er.async_get(hass)
+    changed = False
+    key_changed = False
+    new_buttons: list[ButtonConfig] = []
+    for button in runtime.buttons:
+        location = runtime.locations.get(button.key, button.location)
+        if button.control_id is None:
+            control_id = page_map.locations.get(location)
+            if control_id is not None:
+                old_key = button.key
+                button = ButtonConfig(location=location, name=button.name, control_id=control_id)
+                _migrate_unique_ids(registry, entry, old_key, button.key)
+                runtime.locations.pop(old_key, None)
+                runtime.locations[button.key] = location
+                changed = key_changed = True
+        else:
+            current = page_map.controls.get(button.control_id)
+            if current is not None and current != location:
+                _LOGGER.info("Companion button '%s' moved from %s to %s", button.display_name, location, current)
+                await _async_resubscribe(runtime.client, location, current)
+                runtime.locations[button.key] = current
+                button = ButtonConfig(location=current, name=button.name, control_id=button.control_id)
+                changed = True
+        new_buttons.append(button)
+    runtime.buttons = new_buttons
+    for button in new_buttons:
+        state = runtime.client.states.get(runtime.locations.get(button.key, button.location))
+        async_dispatcher_send(hass, signal_button(entry.entry_id, button.key), state)
+    if changed:
+        _persist_buttons(hass, entry, runtime, reload=key_changed)
+
+
+async def _async_resubscribe(client: CompanionSatelliteClient, old: Location, new: Location) -> None:
+    try:
+        await client.async_unsubscribe(old)
+        await client.async_subscribe(new)
+    except CompanionError as err:
+        _LOGGER.warning("Could not move Companion subscription from %s to %s: %s", old, new, err)
+
+
+@callback
+def _persist_buttons(
+    hass: HomeAssistant, entry: CompanionConfigEntry, runtime: CompanionRuntime, *, reload: bool
+) -> None:
+    options = {**entry.options, CONF_BUTTONS: [button.to_option() for button in runtime.buttons]}
+    if options == dict(entry.options):
+        return
+    if not reload:
+        runtime.suppress_reload = True
+    hass.config_entries.async_update_entry(entry, options=options)
+
+
+@callback
+def _migrate_unique_ids(registry: er.EntityRegistry, entry: ConfigEntry, old_key: str, new_key: str) -> None:
+    """Move entities from position-based unique ids to control-id based ones."""
+    for platform, suffix in ((Platform.BUTTON, "press"), (Platform.SENSOR, "state")):
+        old_unique_id = f"{entry.entry_id}_{old_key}_{suffix}"
+        new_unique_id = f"{entry.entry_id}_{new_key}_{suffix}"
+        entity_id = registry.async_get_entity_id(platform, DOMAIN, old_unique_id)
+        if entity_id is None or registry.async_get_entity_id(platform, DOMAIN, new_unique_id) is not None:
+            continue
+        registry.async_update_entity(entity_id, new_unique_id=new_unique_id)
+        _LOGGER.debug("Migrated %s to control-id unique id", entity_id)
+
+
+@callback
+def _prune_removed_entities(hass: HomeAssistant, entry: CompanionConfigEntry, runtime: CompanionRuntime) -> None:
+    """Drop registry entries for buttons, sensors and variables no longer configured."""
     keep = {f"{entry.entry_id}_connected"}
-    for button in buttons:
-        location = button.location
-        prefix = f"{entry.entry_id}_{location.page}_{location.row}_{location.column}"
-        keep.update({f"{prefix}_press", f"{prefix}_state"})
-    for variable in variables:
+    sensors = bool(entry.options.get(CONF_BUTTON_SENSORS, False))
+    for button in runtime.buttons:
+        keep.add(f"{entry.entry_id}_{button.key}_press")
+        if sensors:
+            keep.add(f"{entry.entry_id}_{button.key}_state")
+    for variable in runtime.variables:
         keep.add(variable_unique_id(entry, variable))
     registry = er.async_get(hass)
     for registry_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
         if registry_entry.unique_id not in keep:
             registry.async_remove(registry_entry.entity_id)
+
+
+@callback
+def _update_pages_issue(hass: HomeAssistant, entry: CompanionConfigEntry, available: bool) -> None:
+    issue_id = f"{ISSUE_PAGES_UNAVAILABLE}_{entry.entry_id}"
+    runtime: CompanionRuntime | None = getattr(entry, "runtime_data", None)
+    if available or runtime is None or not runtime.buttons:
+        ir.async_delete_issue(hass, DOMAIN, issue_id)
+        return
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        issue_id,
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key=ISSUE_PAGES_UNAVAILABLE,
+        translation_placeholders={
+            "name": entry.title,
+            "host": runtime.http.host,
+            "port": str(runtime.http.port),
+        },
+    )
 
 
 @callback

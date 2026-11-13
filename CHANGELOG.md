@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.0
+
+- **One entity per button.** The button entity now carries the live text,
+  first-line label, colours, pressed state, type, position and control id as
+  attributes. The text sensor is off by default; turn it on under *Configure →
+  Entity settings* if you want text history. Existing text sensors are removed
+  unless that option is on.
+- **Moved buttons are followed.** Each button is tracked by Companion's stable
+  control id, read from the page map. Move a button to another position or page
+  in Companion and the Home Assistant entity, its history and your dashboard
+  bindings carry on; the integration resubscribes and updates the stored
+  position by itself. Existing buttons are migrated in place on upgrade. A
+  deleted button becomes unavailable with `exists: false`.
+- A Repairs notice explains when the page map cannot be read (then buttons are
+  tracked by position only).
+
 ## 0.3.0
 
 - **Pick variables from a list.** *Configure → Add variables* now shows the

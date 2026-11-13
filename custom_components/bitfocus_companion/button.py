@@ -1,6 +1,8 @@
-"""Button entities that press a Companion button."""
+"""Button entities that press a Companion button and carry its live state."""
 
 from __future__ import annotations
+
+from typing import Any
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.core import HomeAssistant
@@ -21,19 +23,25 @@ async def async_setup_entry(
 
 
 class CompanionPressButton(CompanionButtonEntity, ButtonEntity):
-    """Pressing this entity presses the Companion button, like a Stream Deck key."""
+    """Pressing this entity presses the Companion button, like a Stream Deck key.
+
+    Attributes carry the button's live text, colours and pressed state.
+    """
 
     _attr_icon = "mdi:gesture-tap-button"
 
     def __init__(self, entry: CompanionConfigEntry, button: ButtonConfig) -> None:
         super().__init__(entry, button)
-        location = button.location
-        self._attr_unique_id = f"{entry.entry_id}_{location.page}_{location.row}_{location.column}_press"
+        self._attr_unique_id = f"{entry.entry_id}_{button.key}_press"
         self._attr_name = button.display_name
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self.button_attributes()
 
     async def async_press(self) -> None:
         try:
-            await self._client.async_press(self._location)
+            await self._client.async_press(self.location)
         except CompanionSubscriptionsDisabled as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,

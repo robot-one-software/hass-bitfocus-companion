@@ -11,6 +11,7 @@ from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
+    BooleanSelector,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
@@ -24,8 +25,10 @@ from homeassistant.helpers.selector import (
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .const import (
+    CONF_BUTTON_SENSORS,
     CONF_BUTTONS,
     CONF_COLUMN,
+    CONF_CONTROL_ID,
     CONF_HTTP_HOST,
     CONF_HTTP_PORT,
     CONF_MACHINE_ID,
@@ -55,7 +58,13 @@ from .satellite import (
     HandshakeInfo,
     async_probe,
 )
-from .trpc import CompanionTrpcError, async_fetch_definitions, async_fetch_values, format_value
+from .trpc import (
+    CompanionTrpcError,
+    async_fetch_definitions,
+    async_fetch_page_map,
+    async_fetch_values,
+    format_value,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -241,8 +250,44 @@ class CompanionOptionsFlow(OptionsFlow):
         options.extend(["add_variables", "add_variables_by_name"])
         if self.config_entry.options.get(CONF_VARIABLES):
             options.append("remove_variables")
-        options.append("http_settings")
+        options.extend(["entity_settings", "http_settings"])
         return self.async_show_menu(step_id="init", menu_options=options)
+
+    async def _with_control_ids(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Best effort: stamp each button with Companion's stable control id."""
+        if all(item.get(CONF_CONTROL_ID) for item in items):
+            return items
+        http = self._http_client()
+        try:
+            page_map = await async_fetch_page_map(async_get_clientsession(self.hass), http.host, http.port)
+        except CompanionTrpcError:
+            return items
+        result = []
+        for item in items:
+            if not item.get(CONF_CONTROL_ID):
+                from .satellite import Location  # noqa: PLC0415
+
+                control_id = page_map.locations.get(
+                    Location(int(item[CONF_PAGE]), int(item[CONF_ROW]), int(item[CONF_COLUMN]))
+                )
+                if control_id:
+                    item = {**item, CONF_CONTROL_ID: control_id}
+            result.append(item)
+        return result
+
+    async def async_step_entity_settings(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """What entities each button gets."""
+        if user_input is not None:
+            return self.async_create_entry(
+                data={**self.config_entry.options, CONF_BUTTON_SENSORS: bool(user_input.get(CONF_BUTTON_SENSORS))}
+            )
+        schema = vol.Schema({vol.Optional(CONF_BUTTON_SENSORS, default=False): BooleanSelector()})
+        return self.async_show_form(
+            step_id="entity_settings",
+            data_schema=self.add_suggested_values_to_schema(
+                schema, {CONF_BUTTON_SENSORS: self.config_entry.options.get(CONF_BUTTON_SENSORS, False)}
+            ),
+        )
 
     def _http_client(self, host: str | None = None, port: int | None = None) -> CompanionHttpClient:
         if not host:
@@ -553,6 +598,7 @@ class CompanionOptionsFlow(OptionsFlow):
                     item["name"] = state.label
                 items.append(item)
                 existing.add(key)
+            items = await self._with_control_ids(items)
             return self.async_create_entry(data={**self.config_entry.options, CONF_BUTTONS: items})
 
         choices: list[SelectOptionDict] = []
@@ -588,6 +634,7 @@ class CompanionOptionsFlow(OptionsFlow):
                     item["name"] = name
                 existing = list(self.config_entry.options.get(CONF_BUTTONS, []))
                 existing.append(item)
+                existing = await self._with_control_ids(existing)
                 return self.async_create_entry(data={**self.config_entry.options, CONF_BUTTONS: existing})
         return self.async_show_form(
             step_id="add_button",

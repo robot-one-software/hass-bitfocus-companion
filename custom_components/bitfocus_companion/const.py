@@ -14,6 +14,8 @@ CONF_PAGE = "page"
 CONF_ROW = "row"
 CONF_COLUMN = "column"
 CONF_MACHINE_ID = "machine_id"
+CONF_CONTROL_ID = "control_id"
+CONF_BUTTON_SENSORS = "button_sensors"
 CONF_HTTP_PORT = "http_port"
 CONF_HTTP_HOST = "http_host"
 CONF_VARIABLES = "variables"
@@ -41,6 +43,7 @@ EVENT_BUTTON = f"{DOMAIN}_button"
 ISSUE_SUBSCRIPTIONS = "subscriptions_disabled"
 ISSUE_TOO_OLD = "companion_too_old"
 ISSUE_HTTP_UNREACHABLE = "http_unreachable"
+ISSUE_PAGES_UNAVAILABLE = "pages_unavailable"
 
 # Companion gained button subscriptions with satellite API 1.10 (Companion 4.3).
 MIN_SUBSCRIPTION_API = (1, 10, 0)
@@ -60,3 +63,8 @@ def signal_connection(entry_id: str) -> str:
 def signal_state(entry_id: str, location: Location) -> str:
     """Dispatcher signal fired when a subscribed button is redrawn."""
     return f"{DOMAIN}_{entry_id}_state_{location.page}_{location.row}_{location.column}"
+
+
+def signal_button(entry_id: str, key: str) -> str:
+    """Dispatcher signal fired when a configured button's state or position changes."""
+    return f"{DOMAIN}_{entry_id}_button_{key}"

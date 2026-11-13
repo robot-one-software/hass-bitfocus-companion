@@ -94,6 +94,7 @@ async def test_options_flow_add_and_remove(hass: HomeAssistant, fake_companion: 
         "add_button",
         "add_variables",
         "add_variables_by_name",
+        "entity_settings",
         "http_settings",
     ]
 

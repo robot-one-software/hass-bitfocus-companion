@@ -118,3 +118,168 @@ def format_value(value: Any, limit: int = 40) -> str:
     text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
     text = " ".join(text.split())
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+# ---------------------------------------------------------------------------
+# Page map: which control sits at which position
+# ---------------------------------------------------------------------------
+
+from dataclasses import dataclass, field  # noqa: E402
+
+from .satellite import Location  # noqa: E402
+
+WATCH_RECONNECT_MIN = 2.0
+WATCH_RECONNECT_MAX = 60.0
+WATCH_SETTLE = 0.3
+
+
+@dataclass
+class PageMap:
+    """Companion's grid: every position that holds a control, and the reverse."""
+
+    locations: dict[Location, str] = field(default_factory=dict)
+    controls: dict[str, Location] = field(default_factory=dict)
+    page_names: dict[int, str] = field(default_factory=dict)
+
+    @classmethod
+    def from_init(cls, payload: dict[str, Any]) -> PageMap:
+        page_map = cls()
+        order = payload.get("order") or []
+        pages = payload.get("pages") or {}
+        for index, page_id in enumerate(order):
+            page = pages.get(page_id) or {}
+            page_number = index + 1
+            page_map.page_names[page_number] = str(page.get("name") or "")
+            for row, columns in (page.get("controls") or {}).items():
+                if not isinstance(columns, dict):
+                    continue
+                for column, control_id in columns.items():
+                    if not control_id:
+                        continue
+                    try:
+                        location = Location(page_number, int(row), int(column))
+                    except ValueError:
+                        continue
+                    page_map.locations[location] = str(control_id)
+                    page_map.controls[str(control_id)] = location
+        return page_map
+
+
+async def async_fetch_page_map(session: aiohttp.ClientSession, host: str, port: int) -> PageMap:
+    """One-shot read of the page map."""
+
+    async def work(ws: aiohttp.ClientWebSocketResponse) -> PageMap:
+        await ws.send_json({"id": 3, "method": "subscription", "params": {"path": "pages.watch"}})
+        try:
+            return await _read_page_init(ws, 3)
+        finally:
+            await ws.send_json({"id": 3, "method": "subscription.stop"})
+
+    return await _with_socket(session, host, port, work)
+
+
+async def _read_page_init(ws: aiohttp.ClientWebSocketResponse, msg_id: int) -> PageMap:
+    while True:
+        data = await _receive(ws)
+        if data.get("id") != msg_id:
+            continue
+        result = data.get("result") or {}
+        payload = result.get("data")
+        if result.get("type") == "data" and isinstance(payload, dict) and payload.get("type") == "init":
+            return PageMap.from_init(payload)
+
+
+class PageMapWatcher:
+    """Keeps a page-map subscription open and reports every change as a fresh full map.
+
+    Change messages carry partial diffs whose shape may evolve, so rather than
+    interpreting them the watcher restarts the subscription and reads a new init.
+    """
+
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        host: str,
+        port: int,
+        on_map: Callable[[PageMap], None],
+        on_available: Callable[[bool], None] | None = None,
+    ) -> None:
+        self._session = session
+        self.host = host
+        self.port = port
+        self._on_map = on_map
+        self._on_available = on_available
+        self._task: asyncio.Task[None] | None = None
+        self.available = False
+        self._stopping = False
+
+    def start(self) -> None:
+        if self._task is None:
+            self._stopping = False
+            self._task = asyncio.create_task(self._run(), name=f"companion-pages-{self.host}")
+
+    async def stop(self) -> None:
+        self._stopping = True
+        task, self._task = self._task, None
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        self._set_available(False)
+
+    def _set_available(self, value: bool) -> None:
+        if self.available == value:
+            return
+        self.available = value
+        if self._on_available is not None:
+            try:
+                self._on_available(value)
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Page map availability callback failed")
+
+    async def _run(self) -> None:
+        backoff = WATCH_RECONNECT_MIN
+        while not self._stopping:
+            try:
+                await self._session_loop()
+                backoff = WATCH_RECONNECT_MIN
+            except asyncio.CancelledError:
+                raise
+            except (aiohttp.ClientError, OSError, TimeoutError, CompanionTrpcError) as err:
+                _LOGGER.debug("Page map watch on %s:%s failed: %s", self.host, self.port, err)
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Unexpected error watching Companion pages")
+            self._set_available(False)
+            if self._stopping:
+                return
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, WATCH_RECONNECT_MAX)
+
+    async def _session_loop(self) -> None:
+        async with self._session.ws_connect(
+            _ws_url(self.host, self.port), max_msg_size=MAX_MESSAGE_SIZE, heartbeat=20
+        ) as ws:
+            msg_id = 100
+            while True:
+                msg_id += 1
+                await ws.send_json({"id": msg_id, "method": "subscription", "params": {"path": "pages.watch"}})
+                page_map = await asyncio.wait_for(_read_page_init(ws, msg_id), TRPC_TIMEOUT)
+                self._set_available(True)
+                try:
+                    self._on_map(page_map)
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception("Page map callback failed")
+                # Wait for any change notification, then settle briefly so a burst becomes one reread.
+                while True:
+                    data = await _receive(ws)
+                    if data.get("id") != msg_id:
+                        continue
+                    result = data.get("result") or {}
+                    if result.get("type") == "data":
+                        break
+                    if result.get("type") == "stopped":
+                        raise CompanionTrpcError("Page subscription stopped by Companion")
+                await asyncio.sleep(WATCH_SETTLE)
+                await ws.send_json({"id": msg_id, "method": "subscription.stop"})

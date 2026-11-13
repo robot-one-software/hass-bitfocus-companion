@@ -178,6 +178,11 @@ class FakeCompanionHttp:
             "internal": {"time_hms": "Time"},
         }
         self.trpc_enabled = True
+        # Companion's page map: "page/row/column" -> control id
+        self.pages: dict[str, str] = {"1/0/2": "bank:cam1", "1/1/1": "bank:cameras", "2/1/0": "bank:rec"}
+        self.page_count = 3
+        self._page_subs: list[tuple[web.WebSocketResponse, int]] = []
+        self._ws_clients: list[web.WebSocketResponse] = []
         self._runner: web.AppRunner | None = None
 
     async def start(self) -> None:
@@ -187,7 +192,7 @@ class FakeCompanionHttp:
         app.router.add_get("/api/custom-variable/{name}/value", self._custom_get)
         app.router.add_post("/api/custom-variable/{name}/value", self._custom_set)
         app.router.add_get("/trpc", self._trpc)
-        self._runner = web.AppRunner(app)
+        self._runner = web.AppRunner(app, shutdown_timeout=0.5)
         await self._runner.setup()
         site = web.TCPSite(self._runner, "127.0.0.1", self.port)
         await site.start()
@@ -196,6 +201,8 @@ class FakeCompanionHttp:
         await web.TCPSite(self._runner, "::1", self.port).start()
 
     async def stop(self) -> None:
+        for ws in list(self._ws_clients):
+            await ws.close()
         if self._runner is not None:
             await self._runner.cleanup()
             self._runner = None
@@ -227,10 +234,37 @@ class FakeCompanionHttp:
             self.custom[name] = request.query.get("value", (await request.text()).strip())
         return web.Response(text="ok")
 
+    def _page_init(self) -> dict:
+        order = [f"page-{n}" for n in range(1, self.page_count + 1)]
+        pages = {pid: {"id": pid, "name": f"PAGE {n}", "controls": {}} for n, pid in enumerate(order, start=1)}
+        for key, control_id in self.pages.items():
+            page, row, column = key.split("/")
+            pages[f"page-{page}"]["controls"].setdefault(row, {})[column] = control_id
+        return {"type": "init", "order": order, "pages": pages}
+
+    async def move_control(self, src: str, dst: str) -> None:
+        """Move a control to another position (or page) and notify page watchers."""
+        self.pages[dst] = self.pages.pop(src)
+        await self._notify_pages()
+
+    async def remove_control(self, key: str) -> None:
+        self.pages.pop(key, None)
+        await self._notify_pages()
+
+    async def _notify_pages(self) -> None:
+        for ws, msg_id in list(self._page_subs):
+            try:
+                await ws.send_json(
+                    {"id": msg_id, "result": {"type": "data", "data": {"type": "update", "changes": []}}}
+                )
+            except ConnectionError:
+                pass
+
     async def _trpc(self, request: web.Request) -> web.WebSocketResponse:
         """Just enough of Companion's tRPC-over-WebSocket admin API."""
         ws = web.WebSocketResponse()
         await ws.prepare(request)
+        self._ws_clients.append(ws)
         if not self.trpc_enabled:
             await ws.close()
             return ws
@@ -241,7 +275,14 @@ class FakeCompanionHttp:
             msg_id = data.get("id")
             method = data.get("method")
             path = (data.get("params") or {}).get("path")
-            if method == "subscription" and path == "variables.definitions.watch":
+            if method == "subscription" and path == "pages.watch":
+                self._page_subs.append((ws, msg_id))
+                await ws.send_json({"id": msg_id, "result": {"type": "started"}})
+                await ws.send_json({"id": msg_id, "result": {"type": "data", "data": self._page_init()}})
+            elif method == "subscription.stop" and any(w is ws and i == msg_id for w, i in self._page_subs):
+                self._page_subs = [(w, i) for w, i in self._page_subs if not (w is ws and i == msg_id)]
+                await ws.send_json({"id": msg_id, "result": {"type": "stopped"}})
+            elif method == "subscription" and path == "variables.definitions.watch":
                 await ws.send_json({"id": msg_id, "result": {"type": "started"}})
                 variables = {
                     label: {name: {"name": name, "description": desc} for name, desc in names.items()}
@@ -260,6 +301,9 @@ class FakeCompanionHttp:
                 await ws.send_json({"id": msg_id, "result": {"type": "data", "data": values}})
             else:
                 await ws.send_json({"id": msg_id, "error": {"message": f"No procedure {path}"}})
+        self._page_subs = [(w, i) for w, i in self._page_subs if w is not ws]
+        if ws in self._ws_clients:
+            self._ws_clients.remove(ws)
         return ws
 
 

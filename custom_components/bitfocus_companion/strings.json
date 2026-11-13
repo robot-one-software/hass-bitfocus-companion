@@ -35,7 +35,8 @@
           "add_variables": "Add variables (pick from Companion)",
           "remove_variables": "Remove variables",
           "http_settings": "HTTP API settings (variables)",
-          "add_variables_by_name": "Add variables by name"
+          "add_variables_by_name": "Add variables by name",
+          "entity_settings": "Entity settings"
         }
       },
       "add_button": {
@@ -109,6 +110,13 @@
           "names": "Variables",
           "unit": "Unit (optional, numeric variables only)"
         }
+      },
+      "entity_settings": {
+        "title": "Entity settings",
+        "description": "Each chosen Companion button is one button entity whose attributes carry the live text, colours and pressed state. Turn this on to also create a text sensor per button, for text history.",
+        "data": {
+          "button_sensors": "Also create a text sensor for each button"
+        }
       }
     },
     "error": {
@@ -137,6 +145,10 @@
     "http_unreachable": {
       "title": "Companion's HTTP API is not reachable",
       "description": "Variables for {name} are read from http://{host}:{port}/api, but it did not answer, so the variable sensors are unavailable.\n\nCompanion listens on localhost only by default. In the Companion launcher window change the interface it listens on to the computer's network address (or all interfaces), or correct the port under the integration's **Configure → HTTP API settings**."
+    },
+    "pages_unavailable": {
+      "title": "Companion's page map is not reachable",
+      "description": "Home Assistant follows Companion buttons by their stable id when you move them between positions or pages, using Companion's admin API at http://{host}:{port}. That API did not answer for {name}, so buttons are tracked by position only until it is back: a moved button would stop updating until you re-add it.\n\nCheck the HTTP API settings under the integration's Configure menu, and that Companion's launcher listens on an address Home Assistant can reach."
     }
   },
   "services": {

@@ -156,6 +156,7 @@ async def test_options_add_and_remove_variables(
         "add_button",
         "add_variables",
         "add_variables_by_name",
+        "entity_settings",
         "http_settings",
     ]
     result = await hass.config_entries.options.async_configure(

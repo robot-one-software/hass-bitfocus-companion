@@ -10,19 +10,19 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import CompanionConfigEntry, variable_unique_id
-from .const import CONF_COLUMN, CONF_PAGE, CONF_ROW
+from .const import CONF_BUTTON_SENSORS
 from .coordinator import VariablesCoordinator
-from .entity import CompanionButtonEntity, CompanionEntity
+from .entity import MAX_STATE_LENGTH, CompanionButtonEntity, CompanionEntity
 from .helpers import ButtonConfig, VariableConfig
-
-MAX_STATE_LENGTH = 255
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: CompanionConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     runtime = entry.runtime_data
-    entities: list[SensorEntity] = [CompanionButtonStateSensor(entry, button) for button in runtime.buttons]
+    entities: list[SensorEntity] = []
+    if entry.options.get(CONF_BUTTON_SENSORS, False):
+        entities.extend(CompanionButtonStateSensor(entry, button) for button in runtime.buttons)
     if runtime.coordinator is not None:
         entities.extend(CompanionVariableSensor(entry, runtime.coordinator, variable) for variable in runtime.variables)
     async_add_entities(entities)
@@ -85,37 +85,22 @@ class CompanionVariableSensor(CoordinatorEntity[VariablesCoordinator], Companion
 
 
 class CompanionButtonStateSensor(CompanionButtonEntity, SensorEntity):
-    """State is the button's text; colours and pressed state are attributes."""
+    """Optional: the button's text as a sensor state, for history. Off by default."""
 
     _attr_icon = "mdi:card-text-outline"
 
     def __init__(self, entry: CompanionConfigEntry, button: ButtonConfig) -> None:
         super().__init__(entry, button)
-        location = button.location
-        self._attr_unique_id = f"{entry.entry_id}_{location.page}_{location.row}_{location.column}_state"
+        self._attr_unique_id = f"{entry.entry_id}_{button.key}_state"
         self._attr_name = f"{button.display_name} text"
 
     @property
     def native_value(self) -> str | None:
-        if self._state is None or self._state.text is None:
+        state = self.button_state
+        if state is None or state.text is None:
             return None
-        return self._state.text[:MAX_STATE_LENGTH]
+        return state.text[:MAX_STATE_LENGTH]
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        attributes: dict[str, Any] = {
-            CONF_PAGE: self._location.page,
-            CONF_ROW: self._location.row,
-            CONF_COLUMN: self._location.column,
-        }
-        if self._state is not None:
-            attributes.update(
-                {
-                    "pressed": self._state.pressed,
-                    "background_color": self._state.color,
-                    "text_color": self._state.text_color,
-                    "font_size": self._state.font_size,
-                    "button_type": self._state.type,
-                }
-            )
-        return attributes
+        return self.button_attributes()

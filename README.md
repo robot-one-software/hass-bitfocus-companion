@@ -69,11 +69,21 @@ open the integration's **Configure** menu:
 - **Add one button by position** takes a page, row and column (rows and columns
   start at 0, pages at 1) and an optional name.
 
-Each chosen button creates:
+Each chosen button becomes one `button.<server>_<name>` entity. Pressing it
+presses the Companion button. Its attributes carry the live state: `text`,
+`label` (first line), `background_color`, `text_color`, `pressed`,
+`button_type`, `font_size`, the current `page`, `row` and `column`, and
+Companion's `control_id`. Bind a dashboard label to `text` and it follows
+whatever Companion shows. *Configure → Entity settings* can add a text sensor
+per button as well, for history.
 
-- `button.<server>_<name>` — press it to press the Companion button.
-- `sensor.<server>_<name>_text` — the button's current text; attributes
-  `background_color`, `text_color`, `pressed`, `font_size`, `button_type`.
+**Moving buttons in Companion is fine.** Buttons are tracked by Companion's
+stable control id, so dragging one to another position or page keeps the same
+Home Assistant entity; the integration follows it and updates its stored
+position. Copies are new buttons. Deleting a button makes its entity
+unavailable with `exists: false`. Entity names are set when you add a button
+and, as usual in Home Assistant, can be renamed any time without affecting the
+entity id.
 
 ## Variables (optional)
 
@@ -150,7 +160,7 @@ triggers:
 Give a dashboard button the tap action **Perform action** →
 `bitfocus_companion.press` with the page, row and column, or point it at the
 `button.` entity you created. Bind the button's label or colour to the matching
-`sensor.…_text` entity and its `background_color` attribute to mirror Companion's
+button entity's `text` and `background_color` attributes to mirror Companion's
 feedback.
 
 ## Troubleshooting

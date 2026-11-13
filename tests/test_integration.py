@@ -31,7 +31,8 @@ async def _setup(
         domain=DOMAIN,
         data={CONF_HOST: "127.0.0.1", CONF_PORT: port},
         options={
-            CONF_BUTTONS: [{"page": 1, "row": 0, "column": 2, "name": "Camera 1"}, {"page": 2, "row": 1, "column": 0}]
+            CONF_BUTTONS: [{"page": 1, "row": 0, "column": 2, "name": "Camera 1"}, {"page": 2, "row": 1, "column": 0}],
+            "button_sensors": True,
         },
         title=title,
         unique_id=unique_id,
