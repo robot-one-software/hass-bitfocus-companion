@@ -6,7 +6,16 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from .const import CONF_BUTTONS, CONF_COLUMN, CONF_CONTROL_ID, CONF_PAGE, CONF_ROW, CONF_UNIT, CONF_VARIABLES
+from .const import (
+    CONF_BUTTONS,
+    CONF_COLUMN,
+    CONF_CONTROL_ID,
+    CONF_PAGE,
+    CONF_ROTARY,
+    CONF_ROW,
+    CONF_UNIT,
+    CONF_VARIABLES,
+)
 from .http_api import VariableRef, parse_variable_ref
 from .satellite import Location
 
@@ -22,6 +31,8 @@ class ButtonConfig:
     location: Location
     name: str | None = None
     control_id: str | None = None
+    # True when the button has rotary (encoder) actions; None when not yet known.
+    rotary: bool | None = None
 
     @property
     def key(self) -> str:
@@ -44,6 +55,8 @@ class ButtonConfig:
             item["name"] = self.name
         if self.control_id:
             item[CONF_CONTROL_ID] = self.control_id
+        if self.rotary is not None:
+            item[CONF_ROTARY] = self.rotary
         return item
 
 
@@ -65,11 +78,13 @@ def buttons_from_options(options: Mapping[str, Any]) -> list[ButtonConfig]:
         seen.add(location)
         name = item.get("name")
         control_id = item.get(CONF_CONTROL_ID)
+        rotary = item.get(CONF_ROTARY)
         buttons.append(
             ButtonConfig(
                 location=location,
                 name=str(name).strip() or None if name else None,
                 control_id=str(control_id) if control_id else None,
+                rotary=bool(rotary) if rotary is not None else None,
             )
         )
     return buttons

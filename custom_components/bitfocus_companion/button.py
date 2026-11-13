@@ -19,7 +19,13 @@ from .satellite import CompanionError, CompanionSubscriptionsDisabled
 async def async_setup_entry(
     hass: HomeAssistant, entry: CompanionConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    async_add_entities(CompanionPressButton(entry, button) for button in entry.runtime_data.buttons)
+    entities: list[ButtonEntity] = []
+    for button in entry.runtime_data.buttons:
+        entities.append(CompanionPressButton(entry, button))
+        if button.rotary:
+            entities.append(CompanionRotateButton(entry, button, -1))
+            entities.append(CompanionRotateButton(entry, button, 1))
+    async_add_entities(entities)
 
 
 class CompanionPressButton(CompanionButtonEntity, ButtonEntity):
@@ -42,6 +48,38 @@ class CompanionPressButton(CompanionButtonEntity, ButtonEntity):
     async def async_press(self) -> None:
         try:
             await self._client.async_press(self.location)
+        except CompanionSubscriptionsDisabled as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="subscriptions_disabled",
+                translation_placeholders={"name": self._entry.title},
+            ) from err
+        except CompanionError as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="command_failed",
+                translation_placeholders={"name": self._entry.title, "error": str(err)},
+            ) from err
+
+
+class CompanionRotateButton(CompanionButtonEntity, ButtonEntity):
+    """One step of a Companion rotary button, left or right, as a Stream Deck+ dial would send."""
+
+    def __init__(self, entry: CompanionConfigEntry, button: ButtonConfig, direction: int) -> None:
+        super().__init__(entry, button)
+        self._direction = direction
+        side = "right" if direction > 0 else "left"
+        self._attr_icon = "mdi:rotate-right" if direction > 0 else "mdi:rotate-left"
+        self._attr_unique_id = f"{entry.entry_id}_{button.key}_{side}"
+        self._attr_name = f"{button.display_name} rotate {side}"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {"direction": "right" if self._direction > 0 else "left", **self.button_attributes()}
+
+    async def async_press(self) -> None:
+        try:
+            await self._client.async_rotate(self.location, self._direction)
         except CompanionSubscriptionsDisabled as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,

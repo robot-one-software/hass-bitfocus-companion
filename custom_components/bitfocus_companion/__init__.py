@@ -58,7 +58,13 @@ from .satellite import (
     Location,
 )
 from .services import async_setup_services
-from .trpc import CompanionTrpcError, PageMap, PageMapWatcher, async_fetch_page_map
+from .trpc import (
+    CompanionTrpcError,
+    PageMap,
+    PageMapWatcher,
+    async_fetch_control_infos,
+    async_fetch_page_map,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -89,6 +95,8 @@ class CompanionRuntime:
     page_map: PageMap | None = None
     watcher: PageMapWatcher | None = None
     suppress_reload: bool = False
+    # Set once the options update listener exists; before that, writes never trigger it.
+    listener_attached: bool = False
 
     def key_at(self, location: Location) -> str | None:
         for key, current in self.locations.items():
@@ -227,6 +235,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CompanionConfigEntry) ->
             _LOGGER.debug("Page map unavailable at setup for %s: %s", entry.title, err)
         else:
             await _async_apply_page_map(hass, entry, runtime, page_map)
+            await _async_learn_rotary(hass, entry, runtime, session)
 
     _prune_removed_entities(hass, entry, runtime)
 
@@ -278,6 +287,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CompanionConfigEntry) ->
         ir.async_delete_issue(hass, DOMAIN, f"{ISSUE_PAGES_UNAVAILABLE}_{entry.entry_id}")
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+    runtime.listener_attached = True
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
@@ -323,7 +333,7 @@ async def _async_apply_page_map(
             control_id = page_map.locations.get(location)
             if control_id is not None:
                 old_key = button.key
-                button = ButtonConfig(location=location, name=button.name, control_id=control_id)
+                button = ButtonConfig(location=location, name=button.name, control_id=control_id, rotary=button.rotary)
                 _migrate_unique_ids(registry, entry, old_key, button.key)
                 runtime.locations.pop(old_key, None)
                 runtime.locations[button.key] = location
@@ -334,7 +344,9 @@ async def _async_apply_page_map(
                 _LOGGER.info("Companion button '%s' moved from %s to %s", button.display_name, location, current)
                 await _async_resubscribe(runtime.client, location, current)
                 runtime.locations[button.key] = current
-                button = ButtonConfig(location=current, name=button.name, control_id=button.control_id)
+                button = ButtonConfig(
+                    location=current, name=button.name, control_id=button.control_id, rotary=button.rotary
+                )
                 changed = True
         new_buttons.append(button)
     runtime.buttons = new_buttons
@@ -343,6 +355,32 @@ async def _async_apply_page_map(
         async_dispatcher_send(hass, signal_button(entry.entry_id, button.key), state)
     if changed:
         _persist_buttons(hass, entry, runtime, reload=key_changed)
+
+
+async def _async_learn_rotary(
+    hass: HomeAssistant, entry: CompanionConfigEntry, runtime: CompanionRuntime, session
+) -> None:
+    """Buttons added before rotary detection existed: ask Companion once whether they rotate."""
+    unknown = [button.control_id for button in runtime.buttons if button.rotary is None and button.control_id]
+    if not unknown:
+        return
+    try:
+        infos = await async_fetch_control_infos(session, runtime.http.host, runtime.http.port, unknown)
+    except CompanionTrpcError as err:
+        _LOGGER.debug("Could not read control details for %s: %s", entry.title, err)
+        return
+    changed = False
+    buttons: list[ButtonConfig] = []
+    for button in runtime.buttons:
+        info = infos.get(button.control_id or "")
+        if button.rotary is None and info is not None:
+            button = ButtonConfig(button.location, button.name, button.control_id, rotary=info.rotary)
+            changed = True
+        buttons.append(button)
+    runtime.buttons = buttons
+    if changed:
+        # Entities for this entry are created right after this, so no reload is needed.
+        _persist_buttons(hass, entry, runtime, reload=False)
 
 
 async def _async_resubscribe(client: CompanionSatelliteClient, old: Location, new: Location) -> None:
@@ -360,7 +398,7 @@ def _persist_buttons(
     options = {**entry.options, CONF_BUTTONS: [button.to_option() for button in runtime.buttons]}
     if options == dict(entry.options):
         return
-    if not reload:
+    if not reload and runtime.listener_attached:
         runtime.suppress_reload = True
     hass.config_entries.async_update_entry(entry, options=options)
 
@@ -387,6 +425,8 @@ def _prune_removed_entities(hass: HomeAssistant, entry: CompanionConfigEntry, ru
         keep.add(f"{entry.entry_id}_{button.key}_press")
         if sensors:
             keep.add(f"{entry.entry_id}_{button.key}_state")
+        if button.rotary:
+            keep.update({f"{entry.entry_id}_{button.key}_left", f"{entry.entry_id}_{button.key}_right"})
     for variable in runtime.variables:
         keep.add(variable_unique_id(entry, variable))
     registry = er.async_get(hass)

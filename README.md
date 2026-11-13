@@ -62,12 +62,18 @@ Several Companion servers can be added; each one is its own device.
 Services work for any button without further setup. If you also want entities,
 open the integration's **Configure** menu:
 
-- **Add buttons from a page** scans one Companion page and lists every position
-  that has something on it, labelled with its button text. Tick the ones you
-  want; each is named after its text. Set the grid size if yours is not the
-  default 4 rows by 8 columns.
+- **Add buttons (pick from Companion)** lists every button on every Companion
+  page that is not in Home Assistant yet, with page, position and text. Page
+  navigation buttons are left out. Tick the ones you want; each is named after
+  its text.
+- **Scan a page for buttons** is the fallback when Companion's admin API is not
+  reachable: it subscribes to every position on one page and lists what it finds.
 - **Add one button by position** takes a page, row and column (rows and columns
   start at 0, pages at 1) and an optional name.
+
+Rotary buttons (Companion buttons with rotary actions, for Stream Deck+ dials)
+are detected: their entity carries `rotary: true` and two more button entities,
+*rotate left* and *rotate right*, turn the encoder one step each.
 
 Each chosen button becomes one `button.<server>_<name>` entity. Pressing it
 presses the Companion button. Its attributes carry the live state: `text`,

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.0
+
+- **Add buttons (pick from Companion).** Lists every real button Companion
+  has across all pages that is not in Home Assistant yet, labelled with page,
+  position and text, with page navigation buttons left out. Tick to add; names
+  come from the button text.
+- **Rotary buttons.** Buttons with rotary actions are detected and marked
+  `rotary: true`; each also gets *rotate left* and *rotate right* button
+  entities, so a dial on a dashboard can turn Companion encoders. Existing
+  buttons learn their rotary flag on the first start after the update.
+- The page scan no longer asks for the grid size; it is now the fallback for
+  installs where the admin API cannot be read and covers up to 8 rows by 16
+  columns on its own.
+
 ## 0.4.1
 
 - Fix: the page-map watch dropped and reconnected every 30 seconds, because

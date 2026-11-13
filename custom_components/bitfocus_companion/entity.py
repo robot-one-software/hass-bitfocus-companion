@@ -93,6 +93,7 @@ class CompanionButtonEntity(CompanionEntity):
             CONF_ROW: location.row,
             CONF_COLUMN: location.column,
             "control_id": button.control_id,
+            "rotary": bool(button.rotary),
             "exists": self._entry.runtime_data.button_exists(self._key),
         }
         state = self.button_state

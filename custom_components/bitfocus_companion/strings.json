@@ -29,14 +29,15 @@
       "init": {
         "title": "Companion buttons",
         "menu_options": {
-          "scan_page": "Add buttons from a page",
+          "scan_page": "Scan a page for buttons",
           "add_button": "Add one button by position",
           "remove_button": "Remove buttons",
           "add_variables": "Add variables (pick from Companion)",
           "remove_variables": "Remove variables",
           "http_settings": "HTTP API settings (variables)",
           "add_variables_by_name": "Add variables by name",
-          "entity_settings": "Entity settings"
+          "entity_settings": "Entity settings",
+          "add_buttons": "Add buttons (pick from Companion)"
         }
       },
       "add_button": {
@@ -57,11 +58,9 @@
       },
       "scan_page": {
         "title": "Scan a Companion page",
-        "description": "Home Assistant looks at every button position on the page and lists the ones that have something on them. Set the grid size to match Companion (the default grid is 4 rows by 8 columns, counted from 0).",
+        "description": "Fallback when Companion's admin API cannot be read: Home Assistant subscribes to every position on the page (up to 8 rows by 16 columns) and lists the ones with something on them.",
         "data": {
-          "page": "Page",
-          "max_row": "Last row",
-          "max_column": "Last column"
+          "page": "Page"
         }
       },
       "pick_buttons": {
@@ -117,6 +116,13 @@
         "data": {
           "button_sensors": "Also create a text sensor for each button"
         }
+      },
+      "add_buttons": {
+        "title": "Add Companion buttons",
+        "description": "{count} of Companion's {total} buttons are not in Home Assistant yet (page navigation buttons are left out). Tick the ones to add. Each is named after its text; rotary buttons also get rotate left and rotate right entities.",
+        "data": {
+          "buttons": "Buttons"
+        }
       }
     },
     "error": {
@@ -130,7 +136,8 @@
       "variables_not_found": "Companion does not know these variables: {missing}. Check the spelling in Companion's Variables tab.",
       "catalog_unavailable": "Could not read the variable list from Companion's admin API at {url}. Check the HTTP API settings, or use 'Add variables by name'.",
       "nothing_matched": "No variables on {label} match the filter '{filter}'.",
-      "too_many": "{count} variables on {label} is too many to list. Type part of a name in the filter to narrow it down."
+      "too_many": "{count} variables on {label} is too many to list. Type part of a name in the filter to narrow it down.",
+      "nothing_missing": "Every Companion button is already in Home Assistant."
     }
   },
   "issues": {

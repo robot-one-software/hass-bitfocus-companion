@@ -90,7 +90,7 @@ async def test_control_id_resolved_and_unique_ids_migrated(
     assert registry_entry is not None
     assert registry_entry.unique_id == f"{entry.entry_id}_ctl_bank:cam1_press"
     assert entry.options[CONF_BUTTONS] == [
-        {"page": 1, "row": 0, "column": 2, "name": "Camera 1", "control_id": "bank:cam1"}
+        {"page": 1, "row": 0, "column": 2, "name": "Camera 1", "control_id": "bank:cam1", "rotary": False}
     ]
     assert hass.states.get("button.my_cam_button").attributes["control_id"] == "bank:cam1"
 

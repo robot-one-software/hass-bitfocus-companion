@@ -34,6 +34,7 @@ from .const import (
     CONF_MACHINE_ID,
     CONF_PAGE,
     CONF_POLL_INTERVAL,
+    CONF_ROTARY,
     CONF_ROW,
     CONF_UNIT,
     CONF_VARIABLES,
@@ -56,10 +57,14 @@ from .satellite import (
     CompanionError,
     CompanionSubscriptionsDisabled,
     HandshakeInfo,
+    Location,
     async_probe,
 )
 from .trpc import (
     CompanionTrpcError,
+    ControlInfo,
+    PageMap,
+    async_fetch_control_infos,
     async_fetch_definitions,
     async_fetch_page_map,
     async_fetch_values,
@@ -98,14 +103,11 @@ SCAN_SCHEMA = vol.Schema(
         vol.Required(CONF_PAGE, default=1): NumberSelector(
             NumberSelectorConfig(min=1, max=999, mode=NumberSelectorMode.BOX)
         ),
-        vol.Required("max_row", default=3): NumberSelector(
-            NumberSelectorConfig(min=0, max=15, mode=NumberSelectorMode.BOX)
-        ),
-        vol.Required("max_column", default=7): NumberSelector(
-            NumberSelectorConfig(min=0, max=31, mode=NumberSelectorMode.BOX)
-        ),
     }
 )
+# Fallback scan when the admin API is unavailable: generous enough for any Companion grid.
+SCAN_MAX_ROW = 7
+SCAN_MAX_COLUMN = 15
 
 
 HTTP_SETTINGS_SCHEMA = vol.Schema(
@@ -244,7 +246,7 @@ class CompanionOptionsFlow(OptionsFlow):
         }
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        options = ["scan_page", "add_button"]
+        options = ["add_buttons", "scan_page", "add_button"]
         if self.config_entry.options.get(CONF_BUTTONS):
             options.append("remove_button")
         options.extend(["add_variables", "add_variables_by_name"])
@@ -254,26 +256,120 @@ class CompanionOptionsFlow(OptionsFlow):
         return self.async_show_menu(step_id="init", menu_options=options)
 
     async def _with_control_ids(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Best effort: stamp each button with Companion's stable control id."""
-        if all(item.get(CONF_CONTROL_ID) for item in items):
-            return items
+        """Best effort: stamp each button with Companion's stable control id and rotary flag."""
         http = self._http_client()
-        try:
-            page_map = await async_fetch_page_map(async_get_clientsession(self.hass), http.host, http.port)
-        except CompanionTrpcError:
-            return items
-        result = []
-        for item in items:
-            if not item.get(CONF_CONTROL_ID):
-                from .satellite import Location  # noqa: PLC0415
-
-                control_id = page_map.locations.get(
-                    Location(int(item[CONF_PAGE]), int(item[CONF_ROW]), int(item[CONF_COLUMN]))
-                )
-                if control_id:
-                    item = {**item, CONF_CONTROL_ID: control_id}
-            result.append(item)
+        session = async_get_clientsession(self.hass)
+        result = list(items)
+        if not all(item.get(CONF_CONTROL_ID) for item in result):
+            try:
+                page_map = await async_fetch_page_map(session, http.host, http.port)
+            except CompanionTrpcError:
+                return result
+            result = [
+                item
+                if item.get(CONF_CONTROL_ID)
+                else {
+                    **item,
+                    **(
+                        {CONF_CONTROL_ID: control_id}
+                        if (
+                            control_id := page_map.locations.get(
+                                Location(int(item[CONF_PAGE]), int(item[CONF_ROW]), int(item[CONF_COLUMN]))
+                            )
+                        )
+                        else {}
+                    ),
+                }
+                for item in result
+            ]
+        unknown = [item[CONF_CONTROL_ID] for item in result if item.get(CONF_CONTROL_ID) and CONF_ROTARY not in item]
+        if unknown:
+            try:
+                infos = await async_fetch_control_infos(session, http.host, http.port, unknown)
+            except CompanionTrpcError:
+                return result
+            result = [
+                {**item, CONF_ROTARY: infos[item[CONF_CONTROL_ID]].rotary}
+                if item.get(CONF_CONTROL_ID) in infos and CONF_ROTARY not in item
+                else item
+                for item in result
+            ]
         return result
+
+    async def async_step_add_buttons(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """List every real button Companion has that is not in Home Assistant yet, and add the ticked ones."""
+        errors: dict[str, str] = {}
+        http = self._http_client()
+        session = async_get_clientsession(self.hass)
+        placeholders = {"url": http.base_url, "count": "0", "total": "0"}
+        page_map: PageMap | None = None
+        infos: dict[str, ControlInfo] = {}
+        try:
+            page_map = await async_fetch_page_map(session, http.host, http.port)
+            infos = await async_fetch_control_infos(session, http.host, http.port, sorted(page_map.controls))
+        except CompanionTrpcError as err:
+            _LOGGER.debug("Button catalogue unavailable: %s", err)
+            errors["base"] = "catalog_unavailable"
+
+        existing = buttons_from_options(self.config_entry.options)
+        known_ids = {button.control_id for button in existing if button.control_id}
+        known_locations = {button.location for button in existing}
+        missing: list[tuple[Location, ControlInfo]] = []
+        if page_map is not None:
+            for control_id, location in page_map.controls.items():
+                info = infos.get(control_id)
+                if info is None or info.is_navigation:
+                    continue
+                if control_id in known_ids or location in known_locations:
+                    continue
+                missing.append((location, info))
+            missing.sort(key=lambda pair: (pair[0].page, pair[0].row, pair[0].column))
+        placeholders["total"] = str(sum(1 for info in infos.values() if not info.is_navigation))
+        placeholders["count"] = str(len(missing))
+
+        if user_input is not None and "base" not in errors:
+            chosen = set(user_input.get(CONF_BUTTONS, []))
+            items = list(self.config_entry.options.get(CONF_BUTTONS, []))
+            for location, info in missing:
+                if info.control_id not in chosen:
+                    continue
+                item: dict[str, Any] = {
+                    CONF_PAGE: location.page,
+                    CONF_ROW: location.row,
+                    CONF_COLUMN: location.column,
+                    CONF_CONTROL_ID: info.control_id,
+                    CONF_ROTARY: info.rotary,
+                }
+                if info.label:
+                    item["name"] = info.label
+                items.append(item)
+            return self.async_create_entry(data={**self.config_entry.options, CONF_BUTTONS: items})
+
+        if "base" not in errors and not missing:
+            errors["base"] = "nothing_missing"
+
+        choices = [
+            SelectOptionDict(
+                value=info.control_id,
+                label=f"Page {location.page} · {location.row}/{location.column}  {info.label or '(no text)'}"
+                + ("  ⟳ rotary" if info.rotary else ""),
+            )
+            for location, info in missing
+        ]
+        schema = (
+            vol.Schema(
+                {
+                    vol.Required(CONF_BUTTONS, default=[]): SelectSelector(
+                        SelectSelectorConfig(options=choices, multiple=True, mode=SelectSelectorMode.LIST)
+                    )
+                }
+            )
+            if choices
+            else vol.Schema({})
+        )
+        return self.async_show_form(
+            step_id="add_buttons", data_schema=schema, errors=errors, description_placeholders=placeholders
+        )
 
     async def async_step_entity_settings(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """What entities each button gets."""
@@ -563,9 +659,7 @@ class CompanionOptionsFlow(OptionsFlow):
                 errors["base"] = "subscriptions_disabled"
             else:
                 try:
-                    found = await client.async_scan_page(
-                        int(user_input[CONF_PAGE]), int(user_input["max_row"]), int(user_input["max_column"])
-                    )
+                    found = await client.async_scan_page(int(user_input[CONF_PAGE]), SCAN_MAX_ROW, SCAN_MAX_COLUMN)
                 except CompanionSubscriptionsDisabled:
                     errors["base"] = "subscriptions_disabled"
                 except CompanionError:

@@ -160,6 +160,21 @@ async def fake_companion() -> AsyncIterator[FakeCompanion]:
     await server.stop()
 
 
+def _layered(text: str) -> dict:
+    """A 5.x layered button config with one text layer."""
+    return {
+        "type": "button-layered",
+        "options": {"rotaryActions": False},
+        "style": {
+            "layers": [
+                {"id": "canvas", "type": "canvas"},
+                {"id": "box0", "type": "box", "color": {"value": 0, "isExpression": False}},
+                {"id": "text0", "type": "text", "text": {"value": text, "isExpression": False}},
+            ]
+        },
+    }
+
+
 class FakeCompanionHttp:
     """Companion's HTTP API: variables, custom variables, connections."""
 
@@ -179,8 +194,22 @@ class FakeCompanionHttp:
         }
         self.trpc_enabled = True
         # Companion's page map: "page/row/column" -> control id
-        self.pages: dict[str, str] = {"1/0/2": "bank:cam1", "1/1/1": "bank:cameras", "2/1/0": "bank:rec"}
+        self.pages: dict[str, str] = {
+            "1/0/0": "bank:pageup",
+            "1/0/2": "bank:cam1",
+            "1/1/1": "bank:cameras",
+            "2/1/0": "bank:rec",
+            "2/1/1": "bank:dial",
+        }
         self.page_count = 3
+        # control id -> config as controls.watchControl reports it
+        self.controls: dict[str, dict] = {
+            "bank:pageup": {"type": "pageup"},
+            "bank:cam1": _layered("CAM 1\nwide"),
+            "bank:cameras": _layered("CAMERAS"),
+            "bank:rec": _layered("REC"),
+            "bank:dial": {**_layered("VOL"), "options": {"rotaryActions": True}},
+        }
         self._page_subs: list[tuple[web.WebSocketResponse, int]] = []
         self._ws_clients: list[web.WebSocketResponse] = []
         self.pongs = 0
@@ -288,6 +317,29 @@ class FakeCompanionHttp:
                 self._page_subs.append((ws, msg_id))
                 await ws.send_json({"id": msg_id, "result": {"type": "started"}})
                 await ws.send_json({"id": msg_id, "result": {"type": "data", "data": self._page_init()}})
+            elif method == "subscription" and path == "controls.watchControl":
+                control_id = data["params"]["input"]["controlId"]
+                config = self.controls.get(control_id)
+                await ws.send_json({"id": msg_id, "result": {"type": "started"}})
+                if config is None:
+                    await ws.send_json({"id": msg_id, "error": {"message": f"Control {control_id} not found"}})
+                else:
+                    await ws.send_json(
+                        {
+                            "id": msg_id,
+                            "result": {"type": "data", "data": {"type": "init", "config": config, "runtime": {}}},
+                        }
+                    )
+            elif method == "query" and path == "userConfig.getConfig":
+                await ws.send_json(
+                    {
+                        "id": msg_id,
+                        "result": {
+                            "type": "data",
+                            "data": {"gridSize": {"minRow": 0, "maxRow": 3, "minColumn": 0, "maxColumn": 7}},
+                        },
+                    }
+                )
             elif method == "subscription.stop" and any(w is ws and i == msg_id for w, i in self._page_subs):
                 self._page_subs = [(w, i) for w, i in self._page_subs if not (w is ws and i == msg_id)]
                 await ws.send_json({"id": msg_id, "result": {"type": "stopped"}})

@@ -152,6 +152,7 @@ async def test_options_add_and_remove_variables(
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["menu_options"] == [
+        "add_buttons",
         "scan_page",
         "add_button",
         "add_variables",

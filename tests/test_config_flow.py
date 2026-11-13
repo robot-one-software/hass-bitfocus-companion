@@ -90,6 +90,7 @@ async def test_options_flow_add_and_remove(hass: HomeAssistant, fake_companion: 
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] is FlowResultType.MENU
     assert result["menu_options"] == [
+        "add_buttons",
         "scan_page",
         "add_button",
         "add_variables",
@@ -144,9 +145,7 @@ async def test_options_flow_scan_page(hass: HomeAssistant, fake_companion: FakeC
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr("custom_components.bitfocus_companion.satellite.SCAN_SETTLE_SECONDS", 0.1)
-        result = await hass.config_entries.options.async_configure(
-            result["flow_id"], {"page": 1, "max_row": 3, "max_column": 7}
-        )
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {"page": 1})
     assert result["type"] is FlowResultType.FORM and result["step_id"] == "pick_buttons"
     assert result["description_placeholders"] == {"count": "2"}
     labels = [option["label"] for option in result["data_schema"].schema[CONF_BUTTONS].config["options"]]
@@ -173,8 +172,6 @@ async def test_options_flow_scan_empty_page(hass: HomeAssistant, fake_companion:
     result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "scan_page"})
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr("custom_components.bitfocus_companion.satellite.SCAN_SETTLE_SECONDS", 0.05)
-        result = await hass.config_entries.options.async_configure(
-            result["flow_id"], {"page": 7, "max_row": 0, "max_column": 1}
-        )
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {"page": 7})
     assert result["type"] is FlowResultType.FORM and result["step_id"] == "scan_page"
     assert result["errors"] == {"base": "nothing_found"}

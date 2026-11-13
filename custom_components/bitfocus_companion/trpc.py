@@ -24,6 +24,7 @@ import aiohttp
 _LOGGER = logging.getLogger(__name__)
 
 TRPC_TIMEOUT = 10.0
+CATALOG_TIMEOUT = 60.0
 MAX_MESSAGE_SIZE = 64 * 1024 * 1024
 CUSTOM_LABEL = "custom"
 
@@ -42,9 +43,10 @@ async def _with_socket(
     host: str,
     port: int,
     work: Callable[[aiohttp.ClientWebSocketResponse], Any],
+    timeout: float = TRPC_TIMEOUT,
 ) -> Any:
     try:
-        async with asyncio.timeout(TRPC_TIMEOUT):
+        async with asyncio.timeout(timeout):
             async with session.ws_connect(_ws_url(host, port), max_msg_size=MAX_MESSAGE_SIZE) as ws:
                 return await work(ws)
     except (aiohttp.ClientError, OSError, TimeoutError) as err:
@@ -298,3 +300,105 @@ class PageMapWatcher:
                         raise CompanionTrpcError("Page subscription stopped by Companion")
                 await asyncio.sleep(WATCH_SETTLE)
                 await ws.send_json({"id": msg_id, "method": "subscription.stop"})
+
+
+# ---------------------------------------------------------------------------
+# Control details: type, text and rotary flag, read from each control's config
+# ---------------------------------------------------------------------------
+
+NAV_CONTROL_TYPES = {"pageup", "pagedown", "pagenum"}
+
+
+@dataclass(frozen=True)
+class ControlInfo:
+    """What a control is, from Companion's point of view."""
+
+    control_id: str
+    type: str
+    text: str
+    rotary: bool
+
+    @property
+    def is_navigation(self) -> bool:
+        return self.type in NAV_CONTROL_TYPES
+
+    @property
+    def label(self) -> str:
+        return self.text.strip().splitlines()[0].strip() if self.text.strip() else ""
+
+
+def _text_from_config(config: dict[str, Any]) -> str:
+    """Find the button text in either the layered (5.x) or classic style model."""
+    style = config.get("style")
+    if isinstance(style, dict):
+        layers = style.get("layers")
+        if isinstance(layers, list):
+            for layer in layers:
+                if isinstance(layer, dict) and layer.get("type") == "text":
+                    text = layer.get("text")
+                    if isinstance(text, dict):
+                        # An expression renders differently at runtime; don't name things after the formula.
+                        if text.get("isExpression"):
+                            return ""
+                        value = text.get("value")
+                    else:
+                        value = text
+                    if isinstance(value, str) and value.strip():
+                        return value
+            return ""
+        text = style.get("text")
+        if isinstance(text, str):
+            return text
+    return ""
+
+
+def control_info_from_config(control_id: str, config: dict[str, Any]) -> ControlInfo:
+    options = config.get("options") if isinstance(config.get("options"), dict) else {}
+    return ControlInfo(
+        control_id=control_id,
+        type=str(config.get("type") or ""),
+        text=_text_from_config(config),
+        rotary=bool(options.get("rotaryActions", False)),
+    )
+
+
+async def async_fetch_control_infos(
+    session: aiohttp.ClientSession, host: str, port: int, control_ids: list[str]
+) -> dict[str, ControlInfo]:
+    """Read type, text and rotary flag for the given controls, one subscription each."""
+    if not control_ids:
+        return {}
+
+    async def work(ws: aiohttp.ClientWebSocketResponse) -> dict[str, ControlInfo]:
+        infos: dict[str, ControlInfo] = {}
+        msg_id = 1000
+        for control_id in control_ids:
+            msg_id += 1
+            await ws.send_json(
+                {
+                    "id": msg_id,
+                    "method": "subscription",
+                    "params": {"path": "controls.watchControl", "input": {"controlId": control_id}},
+                }
+            )
+            try:
+                while True:
+                    data = await _receive(ws)
+                    if data.get("id") != msg_id:
+                        continue
+                    result = data.get("result") or {}
+                    payload = result.get("data")
+                    if result.get("type") == "data" and isinstance(payload, dict) and payload.get("type") == "init":
+                        config = payload.get("config")
+                        if isinstance(config, dict):
+                            infos[control_id] = control_info_from_config(control_id, config)
+                        break
+            except CompanionTrpcError as err:
+                # One missing control (deleted meanwhile) should not spoil the rest.
+                _LOGGER.debug("Control %s could not be read: %s", control_id, err)
+                continue
+            finally:
+                await ws.send_json({"id": msg_id, "method": "subscription.stop"})
+        return infos
+
+    return await _with_socket(session, host, port, work, timeout=CATALOG_TIMEOUT)
