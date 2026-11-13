@@ -1,0 +1,141 @@
+press:
+  fields:
+    page:
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 999
+          mode: box
+    row:
+      required: true
+      example: 0
+      selector:
+        number:
+          min: 0
+          max: 99
+          mode: box
+    column:
+      required: true
+      example: 2
+      selector:
+        number:
+          min: 0
+          max: 99
+          mode: box
+    server:
+      required: false
+      example: "Companion (Studio-Mac)"
+      selector:
+        text:
+
+down:
+  fields:
+    page:
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 999
+          mode: box
+    row:
+      required: true
+      example: 0
+      selector:
+        number:
+          min: 0
+          max: 99
+          mode: box
+    column:
+      required: true
+      example: 2
+      selector:
+        number:
+          min: 0
+          max: 99
+          mode: box
+    server:
+      required: false
+      selector:
+        text:
+
+up:
+  fields:
+    page:
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 999
+          mode: box
+    row:
+      required: true
+      example: 0
+      selector:
+        number:
+          min: 0
+          max: 99
+          mode: box
+    column:
+      required: true
+      example: 2
+      selector:
+        number:
+          min: 0
+          max: 99
+          mode: box
+    server:
+      required: false
+      selector:
+        text:
+
+rotate:
+  fields:
+    page:
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 999
+          mode: box
+    row:
+      required: true
+      example: 0
+      selector:
+        number:
+          min: 0
+          max: 99
+          mode: box
+    column:
+      required: true
+      example: 2
+      selector:
+        number:
+          min: 0
+          max: 99
+          mode: box
+    direction:
+      required: true
+      default: right
+      selector:
+        select:
+          options:
+            - left
+            - right
+          translation_key: direction
+    amount:
+      required: false
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 100
+          mode: box
+    server:
+      required: false
+      selector:
+        text:

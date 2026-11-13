@@ -1,0 +1,2 @@
+# pytest-homeassistant-custom-component pins a matching Home Assistant release.
+pytest-homeassistant-custom-component

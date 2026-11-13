@@ -1,0 +1,126 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Add a Companion server",
+        "description": "Enter the address of the computer running Bitfocus Companion. The port is Companion's satellite port (Settings > Protocols > Satellite listen port, 16622 by default).",
+        "data": {
+          "host": "Host or IP address",
+          "port": "Satellite port"
+        }
+      },
+      "discovery_confirm": {
+        "title": "Companion found",
+        "description": "Set up {name} at {host} (Companion {version})?"
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach Companion's satellite port. Check the address and that Companion is running.",
+      "unknown": "Unexpected error. See the Home Assistant log."
+    },
+    "abort": {
+      "already_configured": "This Companion server is already set up.",
+      "already_in_progress": "This Companion server is already being set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Companion buttons",
+        "menu_options": {
+          "add_button": "Add a button",
+          "remove_button": "Remove buttons"
+        }
+      },
+      "add_button": {
+        "title": "Add a Companion button",
+        "description": "Pick a button by its position in Companion. Rows and columns start at 0; pages start at 1. The same button keeps working on your Stream Deck.",
+        "data": {
+          "page": "Page",
+          "row": "Row",
+          "column": "Column",
+          "name": "Name (optional)"
+        }
+      },
+      "remove_button": {
+        "title": "Remove Companion buttons",
+        "data": {
+          "buttons": "Buttons to remove"
+        }
+      }
+    },
+    "error": {
+      "already_added": "That button is already added."
+    }
+  },
+  "issues": {
+    "subscriptions_disabled": {
+      "title": "Enable button subscriptions in Companion",
+      "description": "Home Assistant is connected to {name} ({host}), but Companion's **Button Subscriptions API** is switched off, so buttons cannot be pressed or watched from here.\n\nIn Companion open **Settings > Protocols** and turn on **Enable Button Subscriptions API**. Home Assistant reconnects on its own."
+    },
+    "companion_too_old": {
+      "title": "Companion is too old for this integration",
+      "description": "{name} ({host}) is running Companion {version}. Button subscriptions need Companion 4.3 or newer. Update Companion, then reload the integration."
+    }
+  },
+  "services": {
+    "press": {
+      "name": "Press button",
+      "description": "Press and release a Companion button, exactly like tapping it on a Stream Deck.",
+      "fields": {
+        "page": { "name": "Page", "description": "Companion page number (starts at 1)." },
+        "row": { "name": "Row", "description": "Row on the page (starts at 0)." },
+        "column": { "name": "Column", "description": "Column on the page (starts at 0)." },
+        "server": { "name": "Server", "description": "Which Companion server, by name. Only needed when more than one is set up." }
+      }
+    },
+    "down": {
+      "name": "Hold button down",
+      "description": "Press a Companion button and keep it held until 'Release button' is called.",
+      "fields": {
+        "page": { "name": "Page", "description": "Companion page number (starts at 1)." },
+        "row": { "name": "Row", "description": "Row on the page (starts at 0)." },
+        "column": { "name": "Column", "description": "Column on the page (starts at 0)." },
+        "server": { "name": "Server", "description": "Which Companion server, by name. Only needed when more than one is set up." }
+      }
+    },
+    "up": {
+      "name": "Release button",
+      "description": "Release a Companion button that was held with 'Hold button down'.",
+      "fields": {
+        "page": { "name": "Page", "description": "Companion page number (starts at 1)." },
+        "row": { "name": "Row", "description": "Row on the page (starts at 0)." },
+        "column": { "name": "Column", "description": "Column on the page (starts at 0)." },
+        "server": { "name": "Server", "description": "Which Companion server, by name. Only needed when more than one is set up." }
+      }
+    },
+    "rotate": {
+      "name": "Rotate encoder",
+      "description": "Turn a Companion button that has rotate actions, as a Stream Deck+ dial would.",
+      "fields": {
+        "page": { "name": "Page", "description": "Companion page number (starts at 1)." },
+        "row": { "name": "Row", "description": "Row on the page (starts at 0)." },
+        "column": { "name": "Column", "description": "Column on the page (starts at 0)." },
+        "direction": { "name": "Direction", "description": "Left (anti-clockwise) or right (clockwise)." },
+        "amount": { "name": "Steps", "description": "How many steps to turn." },
+        "server": { "name": "Server", "description": "Which Companion server, by name. Only needed when more than one is set up." }
+      }
+    }
+  },
+  "selector": {
+    "direction": {
+      "options": {
+        "left": "Left",
+        "right": "Right"
+      }
+    }
+  },
+  "exceptions": {
+    "server_not_found": { "message": "No Companion server named \"{server}\" is set up." },
+    "no_server": { "message": "No Companion server is set up." },
+    "server_required": { "message": "More than one Companion server is set up; pass the server name." },
+    "subscriptions_disabled": { "message": "Companion {name} has the Button Subscriptions API switched off. Enable it under Settings > Protocols in Companion." },
+    "command_failed": { "message": "Companion {name} did not accept the command: {error}" }
+  }
+}

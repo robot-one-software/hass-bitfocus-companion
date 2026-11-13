@@ -1,0 +1,8 @@
+{
+  "services": {
+    "press": { "service": "mdi:gesture-tap-button" },
+    "down": { "service": "mdi:gesture-tap-hold" },
+    "up": { "service": "mdi:gesture-tap" },
+    "rotate": { "service": "mdi:rotate-right" }
+  }
+}

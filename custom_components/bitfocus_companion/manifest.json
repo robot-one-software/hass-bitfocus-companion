@@ -1,0 +1,15 @@
+{
+  "domain": "bitfocus_companion",
+  "name": "Bitfocus Companion",
+  "codeowners": ["@robot-one-software"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/robot-one-software/hass-bitfocus-companion",
+  "integration_type": "hub",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/robot-one-software/hass-bitfocus-companion/issues",
+  "loggers": ["custom_components.bitfocus_companion"],
+  "requirements": [],
+  "version": "0.1.0",
+  "zeroconf": ["_companion-satellite-tcp._tcp.local.", "_comp-sat-tcp._tcp.local."]
+}
