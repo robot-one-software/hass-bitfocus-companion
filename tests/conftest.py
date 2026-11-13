@@ -183,6 +183,7 @@ class FakeCompanionHttp:
         self.page_count = 3
         self._page_subs: list[tuple[web.WebSocketResponse, int]] = []
         self._ws_clients: list[web.WebSocketResponse] = []
+        self.pongs = 0
         self._runner: web.AppRunner | None = None
 
     async def start(self) -> None:
@@ -247,6 +248,11 @@ class FakeCompanionHttp:
         self.pages[dst] = self.pages.pop(src)
         await self._notify_pages()
 
+    async def ping_clients(self) -> None:
+        """tRPC's server-side keepalive: a plain-text PING that must be answered with PONG."""
+        for ws in list(self._ws_clients):
+            await ws.send_str("PING")
+
     async def remove_control(self, key: str) -> None:
         self.pages.pop(key, None)
         await self._notify_pages()
@@ -271,6 +277,9 @@ class FakeCompanionHttp:
         async for message in ws:
             if message.type != web.WSMsgType.TEXT:
                 break
+            if message.data == "PONG":
+                self.pongs += 1
+                continue
             data = json.loads(message.data)
             msg_id = data.get("id")
             method = data.get("method")

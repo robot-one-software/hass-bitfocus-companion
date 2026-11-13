@@ -67,6 +67,9 @@ PLATFORMS = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.SENSOR]
 # A reconnect usually lands within a second or two; only mark entities unavailable
 # once a drop has lasted this long, so brief blips don't litter their history.
 AVAILABILITY_GRACE = 5.0
+# The page-map watch reconnects on its own; only raise a Repairs notice when it has
+# been down this long, so a restart of Companion does not produce a warning.
+PAGES_ISSUE_GRACE = 90.0
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -243,10 +246,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: CompanionConfigEntry) ->
                 hass, _async_apply_page_map(hass, entry, runtime, page_map), f"{DOMAIN} page map {entry.entry_id}"
             )
 
+        pages_issue_handle: asyncio.TimerHandle | None = None
+
+        @callback
+        def _pages_issue_due() -> None:
+            nonlocal pages_issue_handle
+            pages_issue_handle = None
+            if runtime.watcher is not None and not runtime.watcher.available:
+                _update_pages_issue(hass, entry, False)
+
         @callback
         def _on_watch_available(available: bool) -> None:
-            _update_pages_issue(hass, entry, available)
+            nonlocal pages_issue_handle
+            if pages_issue_handle is not None:
+                pages_issue_handle.cancel()
+                pages_issue_handle = None
+            if available:
+                _update_pages_issue(hass, entry, True)
+            else:
+                pages_issue_handle = hass.loop.call_later(PAGES_ISSUE_GRACE, _pages_issue_due)
 
+        @callback
+        def _cancel_pages_issue_timer() -> None:
+            if pages_issue_handle is not None:
+                pages_issue_handle.cancel()
+
+        entry.async_on_unload(_cancel_pages_issue_timer)
         runtime.watcher = PageMapWatcher(session, http.host, http.port, _on_page_map, _on_watch_available)
         runtime.watcher.start()
     else:

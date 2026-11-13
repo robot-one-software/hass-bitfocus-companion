@@ -52,16 +52,31 @@ async def _with_socket(
 
 
 async def _receive(ws: aiohttp.ClientWebSocketResponse) -> dict[str, Any]:
-    message = await ws.receive()
-    if message.type != aiohttp.WSMsgType.TEXT:
-        raise CompanionTrpcError(f"Unexpected WebSocket frame {message.type}")
-    try:
-        data = json.loads(message.data)
-    except ValueError as err:
-        raise CompanionTrpcError("Companion sent a message that is not JSON") from err
-    if "error" in data:
-        raise CompanionTrpcError(str(data["error"].get("message", data["error"])))
-    return data
+    """Next JSON message, answering tRPC's plain-text keepalive on the way.
+
+    Companion's server sends the text frame ``PING`` every 30 s and drops the connection
+    if ``PONG`` does not come back, so that exchange is handled here for every caller.
+    """
+    while True:
+        message = await ws.receive()
+        if message.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSING, aiohttp.WSMsgType.CLOSED):
+            raise CompanionTrpcError("Companion closed the connection")
+        if message.type == aiohttp.WSMsgType.ERROR:
+            raise CompanionTrpcError(f"WebSocket error: {ws.exception()}")
+        if message.type != aiohttp.WSMsgType.TEXT:
+            continue
+        if message.data == "PING":
+            await ws.send_str("PONG")
+            continue
+        if message.data == "PONG":
+            continue
+        try:
+            data = json.loads(message.data)
+        except ValueError as err:
+            raise CompanionTrpcError("Companion sent a message that is not JSON") from err
+        if "error" in data:
+            raise CompanionTrpcError(str(data["error"].get("message", data["error"])))
+        return data
 
 
 async def async_fetch_definitions(session: aiohttp.ClientSession, host: str, port: int) -> dict[str, dict[str, str]]:

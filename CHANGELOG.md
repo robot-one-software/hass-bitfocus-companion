@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.1
+
+- Fix: the page-map watch dropped and reconnected every 30 seconds, because
+  Companion's admin API sends a plain-text keepalive `PING` that was not being
+  answered. This also made the "page map is not reachable" Repairs notice
+  appear even though moves were being followed. The watch now answers the
+  keepalive, and the notice only appears after the watch has been down for
+  90 seconds.
+
 ## 0.4.0
 
 - **One entity per button.** The button entity now carries the live text,

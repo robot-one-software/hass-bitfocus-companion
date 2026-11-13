@@ -124,3 +124,25 @@ async def test_moved_button_is_followed(
     # Deleting the control makes the entity unavailable instead of reading an empty cell.
     await fake_http.remove_control("3/1/1")
     await _wait_until(lambda: hass.states.get("button.companion_test_camera_1").state == STATE_UNAVAILABLE)
+
+
+async def test_watcher_answers_keepalive_pings(
+    hass: HomeAssistant, fake_companion: FakeCompanion, fake_http: FakeCompanionHttp
+) -> None:
+    await _setup(
+        hass,
+        fake_companion.port,
+        fake_http.port,
+        {CONF_BUTTONS: [{"page": 1, "row": 0, "column": 2, "name": "Camera 1", "control_id": "bank:cam1"}]},
+    )
+    await _wait_until(lambda: fake_http._page_subs)  # noqa: SLF001
+    clients_before = len(fake_http._ws_clients)  # noqa: SLF001
+    await fake_http.ping_clients()
+    await _wait_until(lambda: fake_http.pongs >= 1)
+    await asyncio.sleep(0.1)
+    # Still the same connection and subscription; nothing reconnected.
+    assert len(fake_http._ws_clients) == clients_before  # noqa: SLF001
+    assert fake_http._page_subs  # noqa: SLF001
+    # A move afterwards is still followed.
+    await fake_http.move_control("1/0/2", "2/0/0")
+    await _wait_until(lambda: hass.states.get("button.companion_test_camera_1").attributes["page"] == 2)
