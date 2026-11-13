@@ -1,6 +1,17 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.1
+
+- Fix: the connection to Companion dropped and reconnected every few seconds.
+  Companion closes a satellite socket that is silent for 5 seconds; the
+  keepalive now runs every 2 seconds.
+- Entities no longer flip to unavailable on a brief drop; they wait 5 seconds
+  for the reconnect first. The Connected sensor still reflects the socket at once.
+- New **Add buttons from a page** option: scan a Companion page and tick the
+  buttons to add, named after their text, instead of entering positions one by one.
+- Fix: a button could be subscribed twice during startup.
+
+## 0.1.0
 
 First version, built for testing.
 

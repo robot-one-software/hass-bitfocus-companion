@@ -41,6 +41,7 @@ class FakeCompanion:
         self.presses: list[tuple[str, bool]] = []
         self.rotations: list[tuple[str, int]] = []
         self.texts: dict[str, str] = {}
+        self.add_sub_count = 0
         self.pressed: dict[str, bool] = {}
         self.press_event = asyncio.Event()
         self._server: asyncio.AbstractServer | None = None
@@ -59,14 +60,18 @@ class FakeCompanion:
             await self._server.wait_closed()
             self._server = None
 
+    def subscription_count(self) -> int:
+        return sum(len(subs) for _, subs in self._writers)
+
     def _state_line(self, sub_id: str, location: str) -> bytes:
         text = base64.b64encode(self.texts.get(location, "").encode()).decode()
+        # An empty location renders black with no text, like Companion does.
         return format_message(
             "SUB-STATE",
             SUBID=sub_id,
             TYPE="BUTTON",
             PRESSED=self.pressed.get(location, False),
-            COLOR="#ff0000",
+            COLOR="#ff0000" if location in self.texts else "#000000",
             TEXTCOLOR="#ffffff",
             TEXT=text,
             FONT_SIZE="auto",
@@ -106,6 +111,10 @@ class FakeCompanion:
                     continue
                 sub_id = str(params.get("SUBID", ""))
                 if command == "ADD-SUB":
+                    self.add_sub_count += 1
+                    if sub_id in subs:
+                        writer.write(b'ADD-SUB ERROR MESSAGE="SUBID already in use"\n')
+                        continue
                     location = str(params["LOCATION"])
                     subs[sub_id] = location
                     writer.write(f"ADD-SUB OK SUBID={sub_id}\n".encode())

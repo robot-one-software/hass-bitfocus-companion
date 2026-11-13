@@ -51,9 +51,16 @@ Several Companion servers can be added; each one is its own device.
 ## Choose buttons (optional)
 
 Services work for any button without further setup. If you also want entities,
-open the integration's **Configure** menu and pick **Add a button**, giving the
-page, row and column as shown in Companion (rows and columns start at 0, pages
-at 1), plus an optional name. Each one creates:
+open the integration's **Configure** menu:
+
+- **Add buttons from a page** scans one Companion page and lists every position
+  that has something on it, labelled with its button text. Tick the ones you
+  want; each is named after its text. Set the grid size if yours is not the
+  default 4 rows by 8 columns.
+- **Add one button by position** takes a page, row and column (rows and columns
+  start at 0, pages at 1) and an optional name.
+
+Each chosen button creates:
 
 - `button.<server>_<name>` — press it to press the Companion button.
 - `sensor.<server>_<name>_text` — the button's current text; attributes
@@ -128,8 +135,10 @@ feedback.
 ## Not yet included
 
 Reading Companion *variables* (device levels, tally, timecode) and setting custom
-variables need Companion's HTTP API, which many installs bind to localhost only.
-That is planned once the press path has been proven.
+variables. Companion has no way to list its variables, so these will be chosen by
+name, and they need either Companion's HTTP API (which Companion binds to
+localhost unless you change the interface in its launcher) or a satellite surface
+with variables bound in Companion. Coming next.
 
 ## Development
 

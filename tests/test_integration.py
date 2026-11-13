@@ -142,10 +142,27 @@ async def test_setup_fails_when_unreachable(hass: HomeAssistant) -> None:
     assert entry.state is ConfigEntryState.SETUP_RETRY
 
 
-async def test_connection_loss_marks_unavailable(hass: HomeAssistant, fake_companion: FakeCompanion) -> None:
+async def test_connection_loss_marks_unavailable_after_grace(
+    hass: HomeAssistant, fake_companion: FakeCompanion
+) -> None:
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("custom_components.bitfocus_companion.AVAILABILITY_GRACE", 0.3)
+        await _setup(hass, fake_companion.port)
+        await fake_companion.stop()
+        await _wait_until(lambda: hass.states.get("binary_sensor.companion_test_connected").state == STATE_OFF)
+        # Entities ride out a short drop...
+        assert hass.states.get("button.companion_test_camera_1").state != STATE_UNAVAILABLE
+        # ...and only give up once the grace period has passed.
+        await _wait_until(lambda: hass.states.get("button.companion_test_camera_1").state == STATE_UNAVAILABLE)
+
+
+async def test_brief_drop_keeps_entities_available(hass: HomeAssistant, fake_companion: FakeCompanion) -> None:
     await _setup(hass, fake_companion.port)
+    port = fake_companion.port
     await fake_companion.stop()
-    async with asyncio.timeout(5):
-        while hass.states.get("binary_sensor.companion_test_connected").state != STATE_OFF:
-            await asyncio.sleep(0.02)
-    assert hass.states.get("button.companion_test_camera_1").state == STATE_UNAVAILABLE
+    await _wait_until(lambda: hass.states.get("binary_sensor.companion_test_connected").state == STATE_OFF)
+    fake_companion.port = port
+    await fake_companion.start()
+    await _wait_until(lambda: hass.states.get("binary_sensor.companion_test_connected").state == STATE_ON, timeout=10)
+    await hass.async_block_till_done()
+    assert hass.states.get("button.companion_test_camera_1").state != STATE_UNAVAILABLE

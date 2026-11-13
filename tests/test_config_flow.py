@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ipaddress import ip_address
 
+import pytest
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
@@ -88,7 +89,7 @@ async def test_options_flow_add_and_remove(hass: HomeAssistant, fake_companion: 
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] is FlowResultType.MENU
-    assert result["menu_options"] == ["add_button"]
+    assert result["menu_options"] == ["scan_page", "add_button"]
 
     result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "add_button"})
     assert result["type"] is FlowResultType.FORM
@@ -114,3 +115,59 @@ async def test_options_flow_add_and_remove(hass: HomeAssistant, fake_companion: 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.options[CONF_BUTTONS] == []
     assert hass.states.get("button.companion_test_camera_1") is None
+
+
+async def test_options_flow_scan_page(hass: HomeAssistant, fake_companion: FakeCompanion) -> None:
+    fake_companion.texts["1/0/2"] = "CAM 1\nwide"
+    fake_companion.texts["1/2/7"] = "REC"
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_HOST: "127.0.0.1", CONF_PORT: fake_companion.port},
+        options={CONF_BUTTONS: [{"page": 1, "row": 2, "column": 7, "name": "Record"}]},
+        title="Companion (test)",
+        unique_id="test-machine",
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "scan_page"})
+    assert result["type"] is FlowResultType.FORM and result["step_id"] == "scan_page"
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("custom_components.bitfocus_companion.satellite.SCAN_SETTLE_SECONDS", 0.1)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"page": 1, "max_row": 3, "max_column": 7}
+        )
+    assert result["type"] is FlowResultType.FORM and result["step_id"] == "pick_buttons"
+    assert result["description_placeholders"] == {"count": "2"}
+    labels = [option["label"] for option in result["data_schema"].schema[CONF_BUTTONS].config["options"]]
+    assert labels == ["1/0/2  CAM 1", "1/2/7  REC (already added)"]
+
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {CONF_BUTTONS: ["1/0/2", "1/2/7"]})
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_BUTTONS] == [
+        {"page": 1, "row": 2, "column": 7, "name": "Record"},
+        {"page": 1, "row": 0, "column": 2, "name": "CAM 1"},
+    ]
+    assert hass.states.get("button.companion_test_cam_1") is not None
+
+
+async def test_options_flow_scan_empty_page(hass: HomeAssistant, fake_companion: FakeCompanion) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN, data={CONF_HOST: "127.0.0.1", CONF_PORT: fake_companion.port}, title="C", unique_id="m"
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "scan_page"})
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("custom_components.bitfocus_companion.satellite.SCAN_SETTLE_SECONDS", 0.05)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"page": 7, "max_row": 0, "max_column": 1}
+        )
+    assert result["type"] is FlowResultType.FORM and result["step_id"] == "scan_page"
+    assert result["errors"] == {"base": "nothing_found"}

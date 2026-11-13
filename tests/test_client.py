@@ -117,3 +117,40 @@ async def test_reconnects_and_resubscribes(fake_companion: FakeCompanion) -> Non
         assert connections == [True, False, True]
     finally:
         await client.async_stop()
+
+
+async def test_scan_page_reports_only_filled_cells(fake_companion: FakeCompanion) -> None:
+    fake_companion.texts["1/0/0"] = "CAM 1\nwide"
+    fake_companion.texts["1/1/5"] = "REC"
+    client = CompanionSatelliteClient("127.0.0.1", fake_companion.port)
+    await client.async_start()
+    try:
+        await client.async_wait_connected(5)
+        await client.async_subscribe(Location(1, 0, 0))
+        found = await client.async_scan_page(1, max_row=1, max_column=7, settle=0.1)
+        assert len(found) == 16
+        filled = {str(location): state for location, state in found.items() if not state.is_empty}
+        assert set(filled) == {"1/0/0", "1/1/5"}
+        assert filled["1/0/0"].label == "CAM 1"
+        assert found[Location(1, 0, 3)].is_empty
+        # Only the pre-existing subscription survives the scan.
+        await asyncio.sleep(0.05)
+        assert fake_companion.subscription_count() == 1
+        assert Location(1, 0, 0) in client.states and Location(1, 1, 5) not in client.states
+    finally:
+        await client.async_stop()
+
+
+async def test_concurrent_subscribe_sends_one_add_sub(fake_companion: FakeCompanion) -> None:
+    client = CompanionSatelliteClient("127.0.0.1", fake_companion.port)
+    await client.async_start()
+    try:
+        await client.async_wait_connected(5)
+        location = Location(1, 0, 0)
+        await asyncio.gather(
+            client.async_subscribe(location), client.async_subscribe(location), client.async_press(location)
+        )
+        assert fake_companion.add_sub_count == 1
+        assert fake_companion.presses == [("1/0/0", True), ("1/0/0", False)]
+    finally:
+        await client.async_stop()

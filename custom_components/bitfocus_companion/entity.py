@@ -42,7 +42,7 @@ class CompanionEntity(Entity):
 
     @property
     def available(self) -> bool:
-        return self._client.connected
+        return self._entry.runtime_data.available
 
 
 class CompanionButtonEntity(CompanionEntity):
@@ -67,4 +67,4 @@ class CompanionButtonEntity(CompanionEntity):
 
     @property
     def available(self) -> bool:
-        return self._client.connected and self._client.subscriptions_supported
+        return self._entry.runtime_data.available and self._client.subscriptions_supported

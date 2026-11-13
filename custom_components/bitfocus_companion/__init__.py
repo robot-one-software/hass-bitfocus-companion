@@ -6,6 +6,7 @@ buttons can be pressed from Home Assistant and their state can be seen here.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 
@@ -49,6 +50,10 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.SENSOR]
 
+# A reconnect usually lands within a second or two; only mark entities unavailable
+# once a drop has lasted this long, so brief blips don't litter their history.
+AVAILABILITY_GRACE = 5.0
+
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
@@ -58,6 +63,7 @@ class CompanionRuntime:
 
     client: CompanionSatelliteClient
     buttons: list[ButtonConfig]
+    available: bool = True
 
 
 type CompanionConfigEntry = ConfigEntry[CompanionRuntime]
@@ -91,11 +97,42 @@ async def async_setup_entry(hass: HomeAssistant, entry: CompanionConfigEntry) ->
                 },
             )
 
+    grace_handle: asyncio.TimerHandle | None = None
+
+    @callback
+    def _set_available(value: bool) -> None:
+        runtime: CompanionRuntime | None = getattr(entry, "runtime_data", None)
+        if runtime is not None:
+            runtime.available = value
+        async_dispatcher_send(hass, signal_connection(entry.entry_id), value)
+
+    @callback
+    def _grace_expired() -> None:
+        nonlocal grace_handle
+        grace_handle = None
+        if not client.connected:
+            _set_available(False)
+
     @callback
     def _on_connection(connected: bool) -> None:
+        nonlocal grace_handle
+        if grace_handle is not None:
+            grace_handle.cancel()
+            grace_handle = None
         if connected:
             _update_issues(hass, entry, client)
-        async_dispatcher_send(hass, signal_connection(entry.entry_id), connected)
+            _set_available(True)
+        else:
+            # The Connected sensor reflects this at once; entities wait out the grace period.
+            async_dispatcher_send(hass, signal_connection(entry.entry_id), False)
+            grace_handle = hass.loop.call_later(AVAILABILITY_GRACE, _grace_expired)
+
+    @callback
+    def _cancel_grace() -> None:
+        if grace_handle is not None:
+            grace_handle.cancel()
+
+    entry.async_on_unload(_cancel_grace)
 
     client = CompanionSatelliteClient(host, port, state_callback=_on_state, connection_callback=_on_connection)
     await client.async_start()

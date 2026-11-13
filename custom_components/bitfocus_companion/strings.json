@@ -29,7 +29,8 @@
       "init": {
         "title": "Companion buttons",
         "menu_options": {
-          "add_button": "Add a button",
+          "scan_page": "Add buttons from a page",
+          "add_button": "Add one button by position",
           "remove_button": "Remove buttons"
         }
       },
@@ -48,10 +49,30 @@
         "data": {
           "buttons": "Buttons to remove"
         }
+      },
+      "scan_page": {
+        "title": "Scan a Companion page",
+        "description": "Home Assistant looks at every button position on the page and lists the ones that have something on them. Set the grid size to match Companion (the default grid is 4 rows by 8 columns, counted from 0).",
+        "data": {
+          "page": "Page",
+          "max_row": "Last row",
+          "max_column": "Last column"
+        }
+      },
+      "pick_buttons": {
+        "title": "Choose buttons",
+        "description": "{count} buttons found. Tick the ones to add. Each is named after its button text; you can rename the entities afterwards.",
+        "data": {
+          "buttons": "Buttons"
+        }
       }
     },
     "error": {
-      "already_added": "That button is already added."
+      "already_added": "That button is already added.",
+      "not_connected": "Home Assistant is not connected to this Companion server right now.",
+      "subscriptions_disabled": "Companion's Button Subscriptions API is switched off. Enable it under Settings > Protocols in Companion.",
+      "cannot_connect": "Companion did not answer while scanning. Try again.",
+      "nothing_found": "No buttons with text or colour on that page. Check the page number and grid size."
     }
   },
   "issues": {
@@ -69,42 +90,96 @@
       "name": "Press button",
       "description": "Press and release a Companion button, exactly like tapping it on a Stream Deck.",
       "fields": {
-        "page": { "name": "Page", "description": "Companion page number (starts at 1)." },
-        "row": { "name": "Row", "description": "Row on the page (starts at 0)." },
-        "column": { "name": "Column", "description": "Column on the page (starts at 0)." },
-        "server": { "name": "Server", "description": "Which Companion server, by name. Only needed when more than one is set up." }
+        "page": {
+          "name": "Page",
+          "description": "Companion page number (starts at 1)."
+        },
+        "row": {
+          "name": "Row",
+          "description": "Row on the page (starts at 0)."
+        },
+        "column": {
+          "name": "Column",
+          "description": "Column on the page (starts at 0)."
+        },
+        "server": {
+          "name": "Server",
+          "description": "Which Companion server, by name. Only needed when more than one is set up."
+        }
       }
     },
     "down": {
       "name": "Hold button down",
       "description": "Press a Companion button and keep it held until 'Release button' is called.",
       "fields": {
-        "page": { "name": "Page", "description": "Companion page number (starts at 1)." },
-        "row": { "name": "Row", "description": "Row on the page (starts at 0)." },
-        "column": { "name": "Column", "description": "Column on the page (starts at 0)." },
-        "server": { "name": "Server", "description": "Which Companion server, by name. Only needed when more than one is set up." }
+        "page": {
+          "name": "Page",
+          "description": "Companion page number (starts at 1)."
+        },
+        "row": {
+          "name": "Row",
+          "description": "Row on the page (starts at 0)."
+        },
+        "column": {
+          "name": "Column",
+          "description": "Column on the page (starts at 0)."
+        },
+        "server": {
+          "name": "Server",
+          "description": "Which Companion server, by name. Only needed when more than one is set up."
+        }
       }
     },
     "up": {
       "name": "Release button",
       "description": "Release a Companion button that was held with 'Hold button down'.",
       "fields": {
-        "page": { "name": "Page", "description": "Companion page number (starts at 1)." },
-        "row": { "name": "Row", "description": "Row on the page (starts at 0)." },
-        "column": { "name": "Column", "description": "Column on the page (starts at 0)." },
-        "server": { "name": "Server", "description": "Which Companion server, by name. Only needed when more than one is set up." }
+        "page": {
+          "name": "Page",
+          "description": "Companion page number (starts at 1)."
+        },
+        "row": {
+          "name": "Row",
+          "description": "Row on the page (starts at 0)."
+        },
+        "column": {
+          "name": "Column",
+          "description": "Column on the page (starts at 0)."
+        },
+        "server": {
+          "name": "Server",
+          "description": "Which Companion server, by name. Only needed when more than one is set up."
+        }
       }
     },
     "rotate": {
       "name": "Rotate encoder",
       "description": "Turn a Companion button that has rotate actions, as a Stream Deck+ dial would.",
       "fields": {
-        "page": { "name": "Page", "description": "Companion page number (starts at 1)." },
-        "row": { "name": "Row", "description": "Row on the page (starts at 0)." },
-        "column": { "name": "Column", "description": "Column on the page (starts at 0)." },
-        "direction": { "name": "Direction", "description": "Left (anti-clockwise) or right (clockwise)." },
-        "amount": { "name": "Steps", "description": "How many steps to turn." },
-        "server": { "name": "Server", "description": "Which Companion server, by name. Only needed when more than one is set up." }
+        "page": {
+          "name": "Page",
+          "description": "Companion page number (starts at 1)."
+        },
+        "row": {
+          "name": "Row",
+          "description": "Row on the page (starts at 0)."
+        },
+        "column": {
+          "name": "Column",
+          "description": "Column on the page (starts at 0)."
+        },
+        "direction": {
+          "name": "Direction",
+          "description": "Left (anti-clockwise) or right (clockwise)."
+        },
+        "amount": {
+          "name": "Steps",
+          "description": "How many steps to turn."
+        },
+        "server": {
+          "name": "Server",
+          "description": "Which Companion server, by name. Only needed when more than one is set up."
+        }
       }
     }
   },
@@ -117,10 +192,20 @@
     }
   },
   "exceptions": {
-    "server_not_found": { "message": "No Companion server named \"{server}\" is set up." },
-    "no_server": { "message": "No Companion server is set up." },
-    "server_required": { "message": "More than one Companion server is set up; pass the server name." },
-    "subscriptions_disabled": { "message": "Companion {name} has the Button Subscriptions API switched off. Enable it under Settings > Protocols in Companion." },
-    "command_failed": { "message": "Companion {name} did not accept the command: {error}" }
+    "server_not_found": {
+      "message": "No Companion server named \"{server}\" is set up."
+    },
+    "no_server": {
+      "message": "No Companion server is set up."
+    },
+    "server_required": {
+      "message": "More than one Companion server is set up; pass the server name."
+    },
+    "subscriptions_disabled": {
+      "message": "Companion {name} has the Button Subscriptions API switched off. Enable it under Settings > Protocols in Companion."
+    },
+    "command_failed": {
+      "message": "Companion {name} did not accept the command: {error}"
+    }
   }
 }

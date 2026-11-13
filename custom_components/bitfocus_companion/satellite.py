@@ -26,8 +26,10 @@ LINE_LIMIT = 4 * 1024 * 1024
 HANDSHAKE_TIMEOUT = 5.0
 CAPS_TIMEOUT = 1.0
 RESPONSE_TIMEOUT = 5.0
-PING_INTERVAL = 5.0
-PING_TIMEOUT = 20.0
+# Companion drops a satellite socket that is silent for 5 s, so ping well inside that.
+PING_INTERVAL = 2.0
+PING_TIMEOUT = 15.0
+SCAN_SETTLE_SECONDS = 1.0
 PRESS_HOLD_SECONDS = 0.05
 RECONNECT_MIN = 1.0
 RECONNECT_MAX = 30.0
@@ -191,6 +193,18 @@ class ButtonState:
     text_color: str | None = None
     font_size: str | None = None
 
+    @property
+    def is_empty(self) -> bool:
+        """True for a location with nothing on it: no text and a black background."""
+        has_text = bool((self.text or "").strip())
+        black = self.color in (None, "#000000", "rgb(0,0,0)")
+        return self.type == "BUTTON" and not has_text and black
+
+    @property
+    def label(self) -> str:
+        """First line of the button text, for naming things after it."""
+        return (self.text or "").strip().splitlines()[0].strip() if (self.text or "").strip() else ""
+
 
 @dataclass(frozen=True)
 class HandshakeInfo:
@@ -297,6 +311,7 @@ class CompanionSatelliteClient:
         self._pending: dict[str, deque[asyncio.Future[dict[str, str | bool]]]] = defaultdict(deque)
         self._desired: dict[str, Location] = {}
         self._active: set[str] = set()
+        self._inflight: set[str] = set()
         self._connected_event = asyncio.Event()
         self._stopping = False
         self._last_pong = 0.0
@@ -355,6 +370,7 @@ class CompanionSatelliteClient:
         )
         self._writer = writer
         self._active.clear()
+        self._inflight.clear()
         resubscribe: asyncio.Task[None] | None = None
         try:
             self.handshake, leftover = await _read_handshake(reader)
@@ -383,6 +399,7 @@ class CompanionSatelliteClient:
             self._ping_task = None
             self._fail_pending(CompanionConnectionError("Connection to Companion lost"))
             self._active.clear()
+            self._inflight.clear()
             await self._close_writer(send_quit=False)
 
     async def _close_writer(self, *, send_quit: bool) -> None:
@@ -545,10 +562,17 @@ class CompanionSatelliteClient:
     async def _add_sub(self, location: Location) -> None:
         if not self.subscriptions_supported:
             raise CompanionSubscriptionsDisabled("Button subscriptions are not enabled in Companion")
-        await self._request(
-            "ADD-SUB", SUBID=location.sub_id, LOCATION=str(location), TEXT=True, COLORS="hex", TEXT_STYLE=True
-        )
-        self._active.add(location.sub_id)
+        sub_id = location.sub_id
+        if sub_id in self._active or sub_id in self._inflight:
+            return
+        self._inflight.add(sub_id)
+        try:
+            await self._request(
+                "ADD-SUB", SUBID=sub_id, LOCATION=str(location), TEXT=True, COLORS="hex", TEXT_STYLE=True
+            )
+            self._active.add(sub_id)
+        finally:
+            self._inflight.discard(sub_id)
 
     async def async_subscribe(self, location: Location) -> None:
         """Start receiving state for a button. Survives reconnects."""
@@ -569,6 +593,31 @@ class CompanionSatelliteClient:
             raise CompanionConnectionError("Not connected to Companion")
         if location.sub_id not in self._active:
             await self.async_subscribe(location)
+            if location.sub_id not in self._active:
+                # Another caller was mid-subscribe; wait for it to land.
+                async with asyncio.timeout(RESPONSE_TIMEOUT):
+                    while location.sub_id in self._inflight:
+                        await asyncio.sleep(0.01)
+
+    async def async_scan_page(
+        self, page: int, max_row: int = 3, max_column: int = 7, settle: float = SCAN_SETTLE_SECONDS
+    ) -> dict[Location, ButtonState]:
+        """Briefly subscribe to every cell of a page and report what Companion has there.
+
+        Cells that were not already subscribed are released again afterwards.
+        """
+        if not self.connected:
+            raise CompanionConnectionError("Not connected to Companion")
+        locations = [Location(page, row, column) for row in range(max_row + 1) for column in range(max_column + 1)]
+        temporary = [location for location in locations if location.sub_id not in self._desired]
+        try:
+            for location in locations:
+                await self.async_subscribe(location)
+            await asyncio.sleep(settle)
+            return {location: self.states[location] for location in locations if location in self.states}
+        finally:
+            for location in temporary:
+                await self.async_unsubscribe(location)
 
     async def async_set_pressed(self, location: Location, pressed: bool) -> None:
         """Hold down or release a button, as a surface would."""
