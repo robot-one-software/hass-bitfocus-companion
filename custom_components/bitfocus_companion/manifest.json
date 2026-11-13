@@ -14,7 +14,7 @@
     "custom_components.bitfocus_companion"
   ],
   "requirements": [],
-  "version": "0.2.1",
+  "version": "0.3.0",
   "zeroconf": [
     "_companion-satellite-tcp._tcp.local.",
     "_comp-sat-tcp._tcp.local."

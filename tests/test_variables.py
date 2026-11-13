@@ -151,8 +151,16 @@ async def test_options_add_and_remove_variables(
     entry = await _setup(hass, fake_companion.port, fake_http.port, [])
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["menu_options"] == ["scan_page", "add_button", "add_variables", "http_settings"]
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "add_variables"})
+    assert result["menu_options"] == [
+        "scan_page",
+        "add_button",
+        "add_variables",
+        "add_variables_by_name",
+        "http_settings",
+    ]
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_variables_by_name"}
+    )
     assert result["type"] is FlowResultType.FORM and result["errors"] == {}
     labels = [o["value"] for o in result["data_schema"].schema["label"].config["options"]]
     assert labels == ["RCV", "atem", "custom"]
@@ -172,7 +180,9 @@ async def test_options_add_and_remove_variables(
     assert hass.states.get("sensor.companion_test_custom_fader").state == "0"
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "add_variables"})
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_variables_by_name"}
+    )
     result = await hass.config_entries.options.async_configure(result["flow_id"], {"label": "RCV", "names": "ghost"})
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "variables_not_found"}
@@ -228,3 +238,82 @@ async def test_options_http_settings(
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert CONF_HTTP_HOST not in entry.options
     assert entry.runtime_data.http.host == "127.0.0.1"
+
+
+async def test_catalog_fetchers(fake_http: FakeCompanionHttp) -> None:
+    from custom_components.bitfocus_companion.trpc import (
+        CompanionTrpcError,
+        async_fetch_definitions,
+        async_fetch_values,
+        format_value,
+    )
+
+    async with aiohttp.ClientSession() as session:
+        definitions = await async_fetch_definitions(session, "127.0.0.1", fake_http.port)
+        assert definitions["RCV"] == {"combo1_livelevelL": "Combo 1 live level left", "show_name": "Show name"}
+        assert set(definitions) == {"RCV", "atem", "internal"}
+        values = await async_fetch_values(session, "127.0.0.1", fake_http.port, "RCV")
+        assert values == {"combo1_livelevelL": "-18.5"}
+        with pytest.raises(CompanionTrpcError):
+            await async_fetch_definitions(session, "127.0.0.1", 1)
+    assert format_value(None) == "—"
+    assert format_value("CAM\n1") == "CAM 1"
+    assert format_value({"a": 1}) == '{"a": 1}'
+    assert format_value("x" * 50, limit=10) == "xxxxxxxxx…"
+
+
+async def test_options_pick_variables_from_catalog(
+    hass: HomeAssistant, fake_companion: FakeCompanion, fake_http: FakeCompanionHttp
+) -> None:
+    entry = await _setup(hass, fake_companion.port, fake_http.port, [{"ref": "RCV:show_name"}])
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "add_variables"})
+    assert result["type"] is FlowResultType.FORM and result["step_id"] == "add_variables"
+    assert result["errors"] == {}
+    labels = {o["value"]: o["label"] for o in result["data_schema"].schema["label"].config["options"]}
+    assert labels == {
+        "atem": "atem (2 variables)",
+        "custom": "custom (custom variables)",
+        "internal": "internal (1 variables)",
+        "RCV": "RCV (2 variables)",
+    }
+
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"label": "RCV"})
+    assert result["type"] is FlowResultType.FORM and result["step_id"] == "pick_variables"
+    assert result["description_placeholders"]["count"] == "2"
+    options = {o["value"]: o["label"] for o in result["data_schema"].schema["names"].config["options"]}
+    assert options == {
+        "combo1_livelevelL": "combo1_livelevelL = -18.5  ·  Combo 1 live level left",
+        "show_name": "show_name = —  ·  Show name  (already added)",
+    }
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"names": ["combo1_livelevelL", "show_name"], "unit": "dB"}
+    )
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_VARIABLES] == [{"ref": "RCV:show_name"}, {"ref": "RCV:combo1_livelevelL", "unit": "dB"}]
+    assert hass.states.get("sensor.companion_test_rcv_combo1_livelevell").state == "-18.5"
+
+    # A filter narrows the list; an unmatched filter sends you back with an error.
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "add_variables"})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"label": "atem", "filter": "bar"})
+    assert result["step_id"] == "pick_variables"
+    assert [o["value"] for o in result["data_schema"].schema["names"].config["options"]] == ["tbar_1"]
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "add_variables"})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"label": "atem", "filter": "zzz"})
+    assert result["step_id"] == "add_variables"
+    assert result["errors"] == {"base": "nothing_matched"}
+
+
+async def test_options_catalog_unavailable_falls_back(
+    hass: HomeAssistant, fake_companion: FakeCompanion, fake_http: FakeCompanionHttp
+) -> None:
+    fake_http.trpc_enabled = False
+    entry = await _setup(hass, fake_companion.port, fake_http.port, [])
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "add_variables"})
+    assert result["step_id"] == "add_variables"
+    assert result["errors"] == {"base": "catalog_unavailable"}

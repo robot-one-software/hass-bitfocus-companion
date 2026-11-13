@@ -32,9 +32,10 @@
           "scan_page": "Add buttons from a page",
           "add_button": "Add one button by position",
           "remove_button": "Remove buttons",
-          "add_variables": "Add variables",
+          "add_variables": "Add variables (pick from Companion)",
           "remove_variables": "Remove variables",
-          "http_settings": "HTTP API settings (variables)"
+          "http_settings": "HTTP API settings (variables)",
+          "add_variables_by_name": "Add variables by name"
         }
       },
       "add_button": {
@@ -78,8 +79,14 @@
           "poll_interval": "Poll every"
         }
       },
-      "add_variables": {
-        "title": "Add Companion variables",
+      "remove_variables": {
+        "title": "Remove variables",
+        "data": {
+          "variables": "Variables to remove"
+        }
+      },
+      "add_variables_by_name": {
+        "title": "Add Companion variables by name",
         "description": "Pick the connection, then paste variable names one per line (or label:name / $(label:name) to mix connections). Copy names from Companion's Variables tab. Each becomes a sensor. Give a unit (for example dB) to get numeric sensors with graphs.",
         "data": {
           "label": "Connection",
@@ -87,10 +94,20 @@
           "unit": "Unit (optional, numeric variables only)"
         }
       },
-      "remove_variables": {
-        "title": "Remove variables",
+      "add_variables": {
+        "title": "Add Companion variables",
+        "description": "Choose which connection's variables to browse. Companion's own Home Assistant connection can have thousands, so type part of a name or description to narrow the list first.",
         "data": {
-          "variables": "Variables to remove"
+          "label": "Connection",
+          "filter": "Filter (optional)"
+        }
+      },
+      "pick_variables": {
+        "title": "Choose variables",
+        "description": "{count} variables on {label} (filter: {filter}), shown with their current values. Type to search, tick the ones to add. Give a unit such as dB when the values are numbers.",
+        "data": {
+          "names": "Variables",
+          "unit": "Unit (optional, numeric variables only)"
         }
       }
     },
@@ -102,7 +119,10 @@
       "nothing_found": "No buttons with text or colour on that page. Check the page number and grid size.",
       "http_unreachable": "Companion's HTTP API did not answer at {url}. Check the host and port, and that Companion's launcher is set to listen on that address (or all interfaces) rather than localhost.",
       "invalid_variable": "Could not read these as variable names: {missing}. Use label:name, for example RCV:combo1_livelevelL.",
-      "variables_not_found": "Companion does not know these variables: {missing}. Check the spelling in Companion's Variables tab."
+      "variables_not_found": "Companion does not know these variables: {missing}. Check the spelling in Companion's Variables tab.",
+      "catalog_unavailable": "Could not read the variable list from Companion's admin API at {url}. Check the HTTP API settings, or use 'Add variables by name'.",
+      "nothing_matched": "No variables on {label} match the filter '{filter}'.",
+      "too_many": "{count} variables on {label} is too many to list. Type part of a name in the filter to narrow it down."
     }
   },
   "issues": {

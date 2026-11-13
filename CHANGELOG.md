@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0
+
+- **Pick variables from a list.** *Configure → Add variables* now shows the
+  connections Companion knows, with variable counts, then a searchable list of
+  that connection's variables with their current values and descriptions. Tick
+  the ones you want. A filter box narrows very large connections (Companion's
+  own Home Assistant connection can have thousands). The list comes from the
+  same internal API Companion's admin page uses; it is read only while you are
+  picking, never at runtime.
+- The paste-a-name route stays as *Add variables by name*.
+
 ## 0.2.1
 
 - *HTTP API settings* gains an optional **HTTP host**, for Companion installs

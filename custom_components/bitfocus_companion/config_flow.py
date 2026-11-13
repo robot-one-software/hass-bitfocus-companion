@@ -55,6 +55,7 @@ from .satellite import (
     HandshakeInfo,
     async_probe,
 )
+from .trpc import CompanionTrpcError, async_fetch_definitions, async_fetch_values, format_value
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -109,6 +110,12 @@ HTTP_SETTINGS_SCHEMA = vol.Schema(
         ),
     }
 )
+
+
+CUSTOM_LABEL_KEY = "custom"
+
+# A searchable dropdown copes with a few hundred entries; beyond that ask for a filter.
+MAX_PICK_OPTIONS = 400
 
 
 def _short_version(info: HandshakeInfo) -> str:
@@ -217,6 +224,9 @@ class CompanionOptionsFlow(OptionsFlow):
 
     def __init__(self) -> None:
         self._found: dict[str, ButtonState] = {}
+        self._catalog: dict[str, dict[str, str]] = {}
+        self._catalog_label: str = ""
+        self._catalog_filter: str = ""
 
     def _existing_keys(self) -> set[str]:
         return {
@@ -228,7 +238,7 @@ class CompanionOptionsFlow(OptionsFlow):
         options = ["scan_page", "add_button"]
         if self.config_entry.options.get(CONF_BUTTONS):
             options.append("remove_button")
-        options.append("add_variables")
+        options.extend(["add_variables", "add_variables_by_name"])
         if self.config_entry.options.get(CONF_VARIABLES):
             options.append("remove_variables")
         options.append("http_settings")
@@ -278,8 +288,8 @@ class CompanionOptionsFlow(OptionsFlow):
             description_placeholders=placeholders,
         )
 
-    async def async_step_add_variables(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Add one or more variables by name, checking each against Companion."""
+    async def async_step_add_variables_by_name(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Add one or more variables by pasting their names, checking each against Companion."""
         errors: dict[str, str] = {}
         http = self._http_client()
         placeholders: dict[str, str] = {"missing": "", "url": http.base_url}
@@ -347,11 +357,131 @@ class CompanionOptionsFlow(OptionsFlow):
             }
         )
         return self.async_show_form(
-            step_id="add_variables",
+            step_id="add_variables_by_name",
             data_schema=self.add_suggested_values_to_schema(schema, user_input),
             errors=errors,
             description_placeholders=placeholders,
         )
+
+    # -- catalogue picker --------------------------------------------------
+
+    def _variable_keys(self) -> set[str]:
+        return {variable.ref.key for variable in variables_from_options(self.config_entry.options)}
+
+    def _connection_schema(self, user_input: dict[str, Any] | None = None) -> vol.Schema:
+        counts = {label: len(names) for label, names in self._catalog.items() if names}
+        counts.setdefault(CUSTOM_LABEL_KEY, 0)
+        options = [
+            SelectOptionDict(
+                value=label, label=f"{label} ({count} variables)" if count else f"{label} (custom variables)"
+            )
+            for label, count in sorted(counts.items(), key=lambda item: item[0].lower())
+        ]
+        schema = vol.Schema(
+            {
+                vol.Required("label"): SelectSelector(
+                    SelectSelectorConfig(options=options, mode=SelectSelectorMode.DROPDOWN)
+                ),
+                vol.Optional("filter"): TextSelector(),
+            }
+        )
+        suggested = user_input or {"label": self._catalog_label, "filter": self._catalog_filter}
+        return self.add_suggested_values_to_schema(schema, {k: v for k, v in suggested.items() if v})
+
+    async def async_step_add_variables(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Pick a connection from Companion's variable catalogue."""
+        errors: dict[str, str] = {}
+        http = self._http_client()
+        placeholders = {"url": http.base_url, "count": "", "label": "", "filter": ""}
+        try:
+            self._catalog = await async_fetch_definitions(async_get_clientsession(self.hass), http.host, http.port)
+        except CompanionTrpcError as err:
+            _LOGGER.debug("Variable catalogue unavailable: %s", err)
+            errors["base"] = "catalog_unavailable"
+            self._catalog = {}
+
+        if user_input is not None and "base" not in errors:
+            self._catalog_label = str(user_input.get("label", "")).strip()
+            self._catalog_filter = str(user_input.get("filter", "")).strip()
+            if self._catalog_label:
+                return await self.async_step_pick_variables()
+            errors["base"] = "invalid_variable"
+
+        return self.async_show_form(
+            step_id="add_variables",
+            data_schema=self._connection_schema(user_input),
+            errors=errors,
+            description_placeholders=placeholders,
+        )
+
+    async def async_step_pick_variables(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Tick the variables to add, shown with their current values."""
+        label = self._catalog_label
+        definitions = dict(self._catalog.get(label, {}))
+        http = self._http_client()
+        values: dict[str, Any] = {}
+        try:
+            values = await async_fetch_values(async_get_clientsession(self.hass), http.host, http.port, label)
+        except CompanionTrpcError as err:
+            _LOGGER.debug("Variable values unavailable for %s: %s", label, err)
+        for name in values:
+            definitions.setdefault(name, "")
+
+        needle = self._catalog_filter.casefold()
+        names = sorted(
+            name
+            for name, description in definitions.items()
+            if not needle or needle in name.casefold() or needle in description.casefold()
+        )
+        placeholders = {
+            "label": label,
+            "count": str(len(names)),
+            "filter": self._catalog_filter or "none",
+            "url": http.base_url,
+        }
+
+        if user_input is not None:
+            existing = list(self.config_entry.options.get(CONF_VARIABLES, []))
+            known = self._variable_keys()
+            unit = str(user_input.get(CONF_UNIT, "")).strip()
+            for name in user_input.get("names", []):
+                ref = VariableRef(label, str(name))
+                if ref.key in known:
+                    continue
+                item: dict[str, Any] = {"ref": ref.key}
+                if unit:
+                    item[CONF_UNIT] = unit
+                existing.append(item)
+                known.add(ref.key)
+            return self.async_create_entry(data={**self.config_entry.options, CONF_VARIABLES: existing})
+
+        if not names or len(names) > MAX_PICK_OPTIONS:
+            return self.async_show_form(
+                step_id="add_variables",
+                data_schema=self._connection_schema(),
+                errors={"base": "nothing_matched" if not names else "too_many"},
+                description_placeholders=placeholders,
+            )
+
+        known = self._variable_keys()
+        choices: list[SelectOptionDict] = []
+        for name in names:
+            text = f"{name} = {format_value(values.get(name))}"
+            description = definitions.get(name, "")
+            if description and description.casefold() != name.casefold():
+                text = f"{text}  ·  {description[:60]}"
+            if f"{label}:{name}" in known:
+                text = f"{text}  (already added)"
+            choices.append(SelectOptionDict(value=name, label=text))
+        schema = vol.Schema(
+            {
+                vol.Required("names", default=[]): SelectSelector(
+                    SelectSelectorConfig(options=choices, multiple=True, mode=SelectSelectorMode.DROPDOWN)
+                ),
+                vol.Optional(CONF_UNIT): TextSelector(),
+            }
+        )
+        return self.async_show_form(step_id="pick_variables", data_schema=schema, description_placeholders=placeholders)
 
     async def async_step_remove_variables(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         variables = variables_from_options(self.config_entry.options)

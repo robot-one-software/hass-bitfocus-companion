@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 from collections.abc import AsyncIterator
 
 import pytest
@@ -171,6 +172,12 @@ class FakeCompanionHttp:
             {"id": "b2", "label": "atem", "moduleId": "bmd-atem", "enabled": True, "status": {"category": "good"}},
         ]
         self.requests = 0
+        self.definitions: dict[str, dict[str, str]] = {
+            "RCV": {"combo1_livelevelL": "Combo 1 live level left", "show_name": "Show name"},
+            "atem": {"program_input": "Program input", "tbar_1": "T-bar position"},
+            "internal": {"time_hms": "Time"},
+        }
+        self.trpc_enabled = True
         self._runner: web.AppRunner | None = None
 
     async def start(self) -> None:
@@ -179,6 +186,7 @@ class FakeCompanionHttp:
         app.router.add_get("/api/variable/{label}/{name}/value", self._variable)
         app.router.add_get("/api/custom-variable/{name}/value", self._custom_get)
         app.router.add_post("/api/custom-variable/{name}/value", self._custom_set)
+        app.router.add_get("/trpc", self._trpc)
         self._runner = web.AppRunner(app)
         await self._runner.setup()
         site = web.TCPSite(self._runner, "127.0.0.1", self.port)
@@ -218,6 +226,41 @@ class FakeCompanionHttp:
         else:
             self.custom[name] = request.query.get("value", (await request.text()).strip())
         return web.Response(text="ok")
+
+    async def _trpc(self, request: web.Request) -> web.WebSocketResponse:
+        """Just enough of Companion's tRPC-over-WebSocket admin API."""
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        if not self.trpc_enabled:
+            await ws.close()
+            return ws
+        async for message in ws:
+            if message.type != web.WSMsgType.TEXT:
+                break
+            data = json.loads(message.data)
+            msg_id = data.get("id")
+            method = data.get("method")
+            path = (data.get("params") or {}).get("path")
+            if method == "subscription" and path == "variables.definitions.watch":
+                await ws.send_json({"id": msg_id, "result": {"type": "started"}})
+                variables = {
+                    label: {name: {"name": name, "description": desc} for name, desc in names.items()}
+                    for label, names in self.definitions.items()
+                }
+                await ws.send_json(
+                    {"id": msg_id, "result": {"type": "data", "data": {"type": "init", "variables": variables}}}
+                )
+            elif method == "subscription.stop":
+                await ws.send_json({"id": msg_id, "result": {"type": "stopped"}})
+            elif method == "query" and path == "variables.values.connection":
+                label = data["params"]["input"]["label"]
+                values = {k.split(":", 1)[1]: v for k, v in self.variables.items() if k.startswith(f"{label}:")}
+                if label == "custom":
+                    values = dict(self.custom)
+                await ws.send_json({"id": msg_id, "result": {"type": "data", "data": values}})
+            else:
+                await ws.send_json({"id": msg_id, "error": {"message": f"No procedure {path}"}})
+        return ws
 
 
 @pytest.fixture

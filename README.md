@@ -77,11 +77,14 @@ Each chosen button creates:
 
 ## Variables (optional)
 
-**Configure → Add variables**: choose the connection (the list comes from
-Companion), paste one or more variable names, one per line, as they appear in
-Companion's Variables tab, for example `combo1_livelevelL`. You can also paste
-full references like `$(atem:program_input)` or `custom:fader`. Companion is
-asked for each one before it is saved, so typos are caught immediately.
+**Configure → Add variables**: pick a connection (the list and counts come from
+Companion), optionally type part of a name to narrow it, then tick variables
+from a searchable list that shows each one's current value and description.
+
+**Configure → Add variables by name** is the paste route: one name per line, as
+shown in Companion's Variables tab (`combo1_livelevelL`), or full references
+like `$(atem:program_input)` or `custom:fader`. Companion is asked for each one
+before it is saved, so typos are caught immediately.
 
 Give a unit (for example `dB`) when the values are numbers: the sensor then gets
 a history graph and works in numeric conditions. Leave it blank for text such
@@ -173,9 +176,13 @@ feedback.
 
 ## Not yet included
 
-Companion has no API that lists variables, so they are chosen by name rather
-than from a full picker. A per-module suggestions catalogue and push updates
-faster than one per second are on the list.
+Push updates faster than once per second, and number entities for custom
+variables so sliders can bind to an entity instead of calling a service.
+
+The variable picker reads Companion's internal admin API (the one its own web
+page uses) because Companion has no public endpoint that lists variables. If a
+future Companion changes that API the picker shows a clear error and the
+by-name route still works.
 
 ## Development
 
