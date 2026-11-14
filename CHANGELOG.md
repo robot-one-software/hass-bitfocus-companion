@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0
+
+- **Button images (opt-in).** *Configure → Entity settings* can add an
+  `image.` entity per button that serves the button's face exactly as Companion
+  draws it, meters included, refreshed whenever Companion redraws it. Pick 72,
+  96 or 144 px. The `button.` entity's `image_entity` attribute names its image.
+  Companion streams PNG (API 1.12+); older servers send raw pixels, which are
+  converted. Off by default, so nothing changes unless you turn it on.
+
 ## 0.5.0
 
 - **Add buttons (pick from Companion).** Lists every real button Companion

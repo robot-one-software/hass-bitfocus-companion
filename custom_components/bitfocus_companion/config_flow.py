@@ -25,12 +25,14 @@ from homeassistant.helpers.selector import (
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .const import (
+    CONF_BUTTON_IMAGES,
     CONF_BUTTON_SENSORS,
     CONF_BUTTONS,
     CONF_COLUMN,
     CONF_CONTROL_ID,
     CONF_HTTP_HOST,
     CONF_HTTP_PORT,
+    CONF_IMAGE_SIZE,
     CONF_MACHINE_ID,
     CONF_PAGE,
     CONF_POLL_INTERVAL,
@@ -38,8 +40,10 @@ from .const import (
     CONF_ROW,
     CONF_UNIT,
     CONF_VARIABLES,
+    DEFAULT_IMAGE_SIZE,
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
+    IMAGE_SIZES,
 )
 from .helpers import buttons_from_options, variables_from_options
 from .http_api import (
@@ -373,15 +377,35 @@ class CompanionOptionsFlow(OptionsFlow):
 
     async def async_step_entity_settings(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """What entities each button gets."""
+        options = self.config_entry.options
         if user_input is not None:
             return self.async_create_entry(
-                data={**self.config_entry.options, CONF_BUTTON_SENSORS: bool(user_input.get(CONF_BUTTON_SENSORS))}
+                data={
+                    **options,
+                    CONF_BUTTON_SENSORS: bool(user_input.get(CONF_BUTTON_SENSORS)),
+                    CONF_BUTTON_IMAGES: bool(user_input.get(CONF_BUTTON_IMAGES)),
+                    CONF_IMAGE_SIZE: int(user_input.get(CONF_IMAGE_SIZE, DEFAULT_IMAGE_SIZE)),
+                }
             )
-        schema = vol.Schema({vol.Optional(CONF_BUTTON_SENSORS, default=False): BooleanSelector()})
+        sizes = [SelectOptionDict(value=str(size), label=f"{size} px") for size in IMAGE_SIZES]
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_BUTTON_SENSORS, default=False): BooleanSelector(),
+                vol.Optional(CONF_BUTTON_IMAGES, default=False): BooleanSelector(),
+                vol.Optional(CONF_IMAGE_SIZE, default=str(DEFAULT_IMAGE_SIZE)): SelectSelector(
+                    SelectSelectorConfig(options=sizes, mode=SelectSelectorMode.DROPDOWN)
+                ),
+            }
+        )
         return self.async_show_form(
             step_id="entity_settings",
             data_schema=self.add_suggested_values_to_schema(
-                schema, {CONF_BUTTON_SENSORS: self.config_entry.options.get(CONF_BUTTON_SENSORS, False)}
+                schema,
+                {
+                    CONF_BUTTON_SENSORS: options.get(CONF_BUTTON_SENSORS, False),
+                    CONF_BUTTON_IMAGES: options.get(CONF_BUTTON_IMAGES, False),
+                    CONF_IMAGE_SIZE: str(options.get(CONF_IMAGE_SIZE, DEFAULT_IMAGE_SIZE)),
+                },
             ),
         )
 

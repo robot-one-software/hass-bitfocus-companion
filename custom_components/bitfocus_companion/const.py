@@ -17,6 +17,8 @@ CONF_MACHINE_ID = "machine_id"
 CONF_CONTROL_ID = "control_id"
 CONF_ROTARY = "rotary"
 CONF_BUTTON_SENSORS = "button_sensors"
+CONF_BUTTON_IMAGES = "button_images"
+CONF_IMAGE_SIZE = "image_size"
 CONF_HTTP_PORT = "http_port"
 CONF_HTTP_HOST = "http_host"
 CONF_VARIABLES = "variables"
@@ -24,6 +26,9 @@ CONF_POLL_INTERVAL = "poll_interval"
 CONF_UNIT = "unit"
 
 DEFAULT_POLL_INTERVAL = 1.0
+# Pixel sizes a button image can be streamed at. 72 is what a classic Stream Deck key shows.
+IMAGE_SIZES = (72, 96, 144)
+DEFAULT_IMAGE_SIZE = 72
 
 ATTR_SERVER = "server"
 ATTR_DIRECTION = "direction"

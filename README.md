@@ -22,6 +22,7 @@ affiliated with Bitfocus.
 | **Services** `bitfocus_companion.press`, `down`, `up`, `rotate` | Act on any button by page / row / column. No setup per button. |
 | **Button entities** | One per Companion button you choose. Pressing it presses the Companion button. |
 | **Text sensors** | Live text of each chosen button, with background colour, text colour and pressed state as attributes. |
+| **Button images** (opt-in) | The face of each chosen button exactly as Companion draws it, meters included, as an `image.` entity for picture cards and image widgets. |
 | **Variable sensors** | Any Companion variable you name (ATEM fader gain, RØDECaster levels, tally, timecode, custom variables), polled every second. |
 | **Service** `bitfocus_companion.set_custom_variable` | Write a value into a Companion custom variable, for sliders and faders. |
 | **Event** `bitfocus_companion_button` | Fired when a chosen button is pressed or released anywhere, Stream Deck included. Use it as an automation trigger. |
@@ -82,6 +83,14 @@ presses the Companion button. Its attributes carry the live state: `text`,
 Companion's `control_id`. Bind a dashboard label to `text` and it follows
 whatever Companion shows. *Configure → Entity settings* can add a text sensor
 per button as well, for history.
+
+**Button images (optional).** Turn on *Also create an image of each button* in
+*Configure → Entity settings* and every chosen button also gets an
+`image.<server>_<name>_image` entity holding the button's face exactly as
+Companion draws it, audio meters and all, refreshed on every redraw (72, 96 or
+144 px). Show it with any picture card or image widget; the `button.` entity's
+`image_entity` attribute names it. Off by default: it is a few kilobytes per
+redraw, which meter buttons do several times a second.
 
 **Moving buttons in Companion is fine.** Buttons are tracked by Companion's
 stable control id, so dragging one to another position or page keeps the same
@@ -167,7 +176,8 @@ Give a dashboard button the tap action **Perform action** →
 `bitfocus_companion.press` with the page, row and column, or point it at the
 `button.` entity you created. Bind the button's label or colour to the matching
 button entity's `text` and `background_color` attributes to mirror Companion's
-feedback.
+feedback, or, with button images on, show the `image.` entity for the full
+Companion rendering.
 
 ## Troubleshooting
 

@@ -7,14 +7,18 @@ from dataclasses import dataclass
 from typing import Any
 
 from .const import (
+    CONF_BUTTON_IMAGES,
     CONF_BUTTONS,
     CONF_COLUMN,
     CONF_CONTROL_ID,
+    CONF_IMAGE_SIZE,
     CONF_PAGE,
     CONF_ROTARY,
     CONF_ROW,
     CONF_UNIT,
     CONF_VARIABLES,
+    DEFAULT_IMAGE_SIZE,
+    IMAGE_SIZES,
 )
 from .http_api import VariableRef, parse_variable_ref
 from .satellite import Location
@@ -122,3 +126,14 @@ def variables_from_options(options: Mapping[str, Any]) -> list[VariableConfig]:
             )
         )
     return variables
+
+
+def image_size_from_options(options: Mapping[str, Any]) -> int | None:
+    """The pixel size button images are streamed at, or None when images are off."""
+    if not options.get(CONF_BUTTON_IMAGES, False):
+        return None
+    try:
+        size = int(options.get(CONF_IMAGE_SIZE, DEFAULT_IMAGE_SIZE))
+    except (TypeError, ValueError):
+        return DEFAULT_IMAGE_SIZE
+    return size if size in IMAGE_SIZES else DEFAULT_IMAGE_SIZE

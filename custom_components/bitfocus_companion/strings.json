@@ -112,9 +112,11 @@
       },
       "entity_settings": {
         "title": "Entity settings",
-        "description": "Each chosen Companion button is one button entity whose attributes carry the live text, colours and pressed state. Turn this on to also create a text sensor per button, for text history.",
+        "description": "Each chosen Companion button is one button entity whose attributes carry the live text, colours and pressed state. A text sensor adds text history. Button images add an image entity per button showing its face exactly as Companion draws it (meters and all), refreshed on every redraw; the button's image_entity attribute names it.",
         "data": {
-          "button_sensors": "Also create a text sensor for each button"
+          "button_sensors": "Also create a text sensor for each button",
+          "button_images": "Also create an image of each button as Companion draws it",
+          "image_size": "Image size"
         }
       },
       "add_buttons": {

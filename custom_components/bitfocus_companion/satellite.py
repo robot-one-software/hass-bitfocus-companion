@@ -139,6 +139,28 @@ def decode_text(value: str | bool | None) -> str | None:
         return None
 
 
+def decode_bitmap(value: str | bool | None) -> tuple[bytes, str] | None:
+    """Decode a BITMAP field into ``(bytes, format)``.
+
+    Encoded images arrive as a data URL (``data:image/png;base64,...``); anything else is
+    base64 of raw rgb pixels, reported with the format ``rgb``.
+    """
+    if not isinstance(value, str) or not value:
+        return None
+    fmt = "rgb"
+    payload = value
+    if value.startswith("data:"):
+        header, separator, payload = value.partition(",")
+        if not separator:
+            return None
+        fmt = header[5:].split(";", 1)[0].strip().lower() or "application/octet-stream"
+    try:
+        data = base64.b64decode(payload, validate=False)
+    except (binascii.Error, ValueError):
+        return None
+    return (data, fmt) if data else None
+
+
 def parse_version(value: str) -> tuple[int, ...]:
     """Turn ``1.14.0`` into ``(1, 14, 0)``; unknown parts become 0."""
     parts: list[int] = []
@@ -192,6 +214,11 @@ class ButtonState:
     color: str | None = None
     text_color: str | None = None
     font_size: str | None = None
+    # The rendered face of the button, when the subscription asked for one.
+    image: bytes | None = None
+    # ``image/png``, ``image/webp`` or ``rgb`` (raw pixels, ``image_size`` wide and high).
+    image_format: str | None = None
+    image_size: int | None = None
 
     @property
     def is_empty(self) -> bool:
@@ -228,6 +255,14 @@ class HandshakeInfo:
     @property
     def rotary_amount(self) -> bool:
         return truthy(self.caps.get("ROTARY_AMOUNT", False))
+
+    @property
+    def bitmap_formats(self) -> tuple[str, ...]:
+        """Encodings Companion offers for button images; empty before API 1.12 (raw rgb only)."""
+        value = self.caps.get("BITMAP_FORMATS")
+        if not isinstance(value, str):
+            return ()
+        return tuple(part.strip().lower() for part in value.split(",") if part.strip())
 
 
 StateCallback = Callable[[ButtonState, bool], None]
@@ -295,9 +330,12 @@ class CompanionSatelliteClient:
         *,
         state_callback: StateCallback | None = None,
         connection_callback: ConnectionCallback | None = None,
+        bitmap_size: int | None = None,
     ) -> None:
         self.host = host
         self.port = port
+        # Ask Companion to stream each subscribed button's rendered face at this size (pixels).
+        self.bitmap_size = bitmap_size
         self._state_callback = state_callback
         self._connection_callback = connection_callback
 
@@ -517,6 +555,9 @@ class CompanionSatelliteClient:
             text_color=params.get("TEXTCOLOR") if isinstance(params.get("TEXTCOLOR"), str) else None,
             font_size=str(params["FONT_SIZE"]) if "FONT_SIZE" in params else None,
         )
+        if (bitmap := decode_bitmap(params.get("BITMAP"))) is not None:
+            state.image, state.image_format = bitmap
+            state.image_size = self.bitmap_size
         self.states[location] = state
         pressed_changed = previous is not None and previous.pressed != state.pressed
         if self._state_callback is not None:
@@ -567,9 +608,20 @@ class CompanionSatelliteClient:
             return
         self._inflight.add(sub_id)
         try:
-            await self._request(
-                "ADD-SUB", SUBID=sub_id, LOCATION=str(location), TEXT=True, COLORS="hex", TEXT_STYLE=True
-            )
+            args: dict[str, str | int | bool] = {
+                "SUBID": sub_id,
+                "LOCATION": str(location),
+                "TEXT": True,
+                "COLORS": "hex",
+                "TEXT_STYLE": True,
+            }
+            if self.bitmap_size:
+                args["BITMAP"] = int(self.bitmap_size)
+                # PNG is compact and ready to serve; Companion before API 1.12 ignores the
+                # format and sends raw rgb pixels, which the image entity converts itself.
+                if self.handshake is not None and "png" in self.handshake.bitmap_formats:
+                    args["BITMAP_FORMAT"] = "png"
+            await self._request("ADD-SUB", **args)
             self._active.add(sub_id)
         finally:
             self._inflight.discard(sub_id)

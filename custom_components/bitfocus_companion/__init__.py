@@ -47,7 +47,13 @@ from .const import (
     signal_connection,
 )
 from .coordinator import VariablesCoordinator
-from .helpers import ButtonConfig, VariableConfig, buttons_from_options, variables_from_options
+from .helpers import (
+    ButtonConfig,
+    VariableConfig,
+    buttons_from_options,
+    image_size_from_options,
+    variables_from_options,
+)
 from .http_api import DEFAULT_HTTP_PORT, CompanionHttpClient
 from .satellite import (
     DEFAULT_PORT,
@@ -68,7 +74,7 @@ from .trpc import (
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.SENSOR]
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.IMAGE, Platform.SENSOR]
 
 # A reconnect usually lands within a second or two; only mark entities unavailable
 # once a drop has lasted this long, so brief blips don't litter their history.
@@ -195,7 +201,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: CompanionConfigEntry) ->
 
     entry.async_on_unload(_cancel_grace)
 
-    client = CompanionSatelliteClient(host, port, state_callback=_on_state, connection_callback=_on_connection)
+    client = CompanionSatelliteClient(
+        host,
+        port,
+        state_callback=_on_state,
+        connection_callback=_on_connection,
+        bitmap_size=image_size_from_options(entry.options),
+    )
     await client.async_start()
     try:
         await client.async_wait_connected(CONNECT_TIMEOUT)
@@ -421,10 +433,13 @@ def _prune_removed_entities(hass: HomeAssistant, entry: CompanionConfigEntry, ru
     """Drop registry entries for buttons, sensors and variables no longer configured."""
     keep = {f"{entry.entry_id}_connected"}
     sensors = bool(entry.options.get(CONF_BUTTON_SENSORS, False))
+    images = image_size_from_options(entry.options) is not None
     for button in runtime.buttons:
         keep.add(f"{entry.entry_id}_{button.key}_press")
         if sensors:
             keep.add(f"{entry.entry_id}_{button.key}_state")
+        if images:
+            keep.add(f"{entry.entry_id}_{button.key}_image")
         if button.rotary:
             keep.update({f"{entry.entry_id}_{button.key}_left", f"{entry.entry_id}_{button.key}_right"})
     for variable in runtime.variables:

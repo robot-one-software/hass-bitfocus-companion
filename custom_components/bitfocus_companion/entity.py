@@ -5,13 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.core import callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
 
 from . import CompanionConfigEntry
 from .const import CONF_COLUMN, CONF_PAGE, CONF_ROW, DOMAIN, MANUFACTURER, MODEL, signal_button, signal_connection
-from .helpers import ButtonConfig
+from .helpers import ButtonConfig, image_size_from_options
 from .satellite import ButtonState, Location
 
 MAX_STATE_LENGTH = 255
@@ -96,6 +97,11 @@ class CompanionButtonEntity(CompanionEntity):
             "rotary": bool(button.rotary),
             "exists": self._entry.runtime_data.button_exists(self._key),
         }
+        if image_size_from_options(self._entry.options) is not None:
+            # The image entity serving this button's rendered face, for dashboards to show.
+            attributes["image_entity"] = er.async_get(self.hass).async_get_entity_id(
+                "image", DOMAIN, f"{self._entry.entry_id}_{self._key}_image"
+            )
         state = self.button_state
         if state is not None:
             attributes.update(

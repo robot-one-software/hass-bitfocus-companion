@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import json
 from collections.abc import AsyncIterator
 
 import pytest
 from aiohttp import web
+from PIL import Image
 
 from custom_components.bitfocus_companion.satellite import format_message, parse_line
 
@@ -44,6 +46,9 @@ class FakeCompanion:
         self.rotations: list[tuple[str, int]] = []
         self.texts: dict[str, str] = {}
         self.add_sub_count = 0
+        self.last_add_sub: dict[str, str | bool] = {}
+        # Per subscription id: (bitmap size, format) when the client asked for images.
+        self.bitmaps: dict[str, tuple[int, str]] = {}
         self.pressed: dict[str, bool] = {}
         self.press_event = asyncio.Event()
         self._server: asyncio.AbstractServer | None = None
@@ -65,19 +70,32 @@ class FakeCompanion:
     def subscription_count(self) -> int:
         return sum(len(subs) for _, subs in self._writers)
 
+    def render(self, location: str, size: int) -> Image.Image:
+        """The 'face' of a button: solid red when it has text, black when empty."""
+        return Image.new("RGB", (size, size), (255, 0, 0) if self.texts.get(location) else (0, 0, 0))
+
     def _state_line(self, sub_id: str, location: str) -> bytes:
         text = base64.b64encode(self.texts.get(location, "").encode()).decode()
         # An empty location renders black with no text, like Companion does.
-        return format_message(
-            "SUB-STATE",
-            SUBID=sub_id,
-            TYPE="BUTTON",
-            PRESSED=self.pressed.get(location, False),
-            COLOR="#ff0000" if location in self.texts else "#000000",
-            TEXTCOLOR="#ffffff",
-            TEXT=text,
-            FONT_SIZE="auto",
-        ).encode()
+        args: dict[str, str | bool] = {
+            "SUBID": sub_id,
+            "TYPE": "BUTTON",
+            "PRESSED": self.pressed.get(location, False),
+            "COLOR": "#ff0000" if self.texts.get(location) else "#000000",
+            "TEXTCOLOR": "#ffffff",
+            "TEXT": text,
+            "FONT_SIZE": "auto",
+        }
+        if sub_id in self.bitmaps:
+            size, fmt = self.bitmaps[sub_id]
+            image = self.render(location, size)
+            if fmt == "png":
+                buffer = io.BytesIO()
+                image.save(buffer, format="PNG")
+                args["BITMAP"] = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+            else:
+                args["BITMAP"] = base64.b64encode(image.tobytes()).decode()
+        return format_message("SUB-STATE", **args).encode()
 
     async def push_state(self, location: str, text: str, pressed: bool = False) -> None:
         """Pretend the button at ``location`` was redrawn."""
@@ -114,11 +132,18 @@ class FakeCompanion:
                 sub_id = str(params.get("SUBID", ""))
                 if command == "ADD-SUB":
                     self.add_sub_count += 1
+                    self.last_add_sub = dict(params)
                     if sub_id in subs:
                         writer.write(b'ADD-SUB ERROR MESSAGE="SUBID already in use"\n')
                         continue
                     location = str(params["LOCATION"])
                     subs[sub_id] = location
+                    if "BITMAP" in params and str(params["BITMAP"]) not in ("0", "false"):
+                        # Like Companion: a format must be one CAPS advertised, else raw rgb.
+                        fmt = str(params.get("BITMAP_FORMAT", "rgb"))
+                        if not self.send_caps or fmt not in ("png", "webp"):
+                            fmt = "rgb"
+                        self.bitmaps[sub_id] = (int(str(params["BITMAP"])), fmt)
                     writer.write(f"ADD-SUB OK SUBID={sub_id}\n".encode())
                     writer.write(self._state_line(sub_id, location))
                 elif command == "REMOVE-SUB":
