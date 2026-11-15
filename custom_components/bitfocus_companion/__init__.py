@@ -26,6 +26,9 @@ from .const import (
     ATTR_PRESSED,
     ATTR_SERVER,
     ATTR_TEXT,
+    AUTO_SYNC_DEBOUNCE,
+    CONF_AUTO_ADD,
+    CONF_AUTO_REMOVE,
     CONF_BUTTON_SENSORS,
     CONF_BUTTONS,
     CONF_COLUMN,
@@ -107,6 +110,8 @@ class CompanionRuntime:
     listener_attached: bool = False
     # Entity ids seen changing fast enough to flood the recorder (see recorder_notice).
     churny_entities: set[str] = field(default_factory=set)
+    # Pending debounced auto-sync after a page-map change.
+    auto_sync_handle: asyncio.TimerHandle | None = None
 
     def key_at(self, location: Location) -> str | None:
         for key, current in self.locations.items():
@@ -242,7 +247,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CompanionConfigEntry) ->
     runtime.locations = {button.key: button.location for button in buttons}
     entry.runtime_data = runtime
 
-    if buttons:
+    if buttons or entry.options.get(CONF_AUTO_ADD):
         # Learn each button's stable control id and current position before entities exist,
         # so unique ids are right from the start and moved buttons are found again.
         try:
@@ -252,6 +257,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CompanionConfigEntry) ->
         else:
             await _async_apply_page_map(hass, entry, runtime, page_map)
             await _async_learn_rotary(hass, entry, runtime, session)
+            await _async_auto_sync(hass, entry, runtime)
 
     _prune_removed_entities(hass, entry, runtime)
     if image_size_from_options(entry.options) is None:
@@ -265,13 +271,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: CompanionConfigEntry) ->
         except CompanionError as err:
             _LOGGER.warning("Could not subscribe to Companion button %s at %s: %s", key, location, err)
 
-    if buttons:
+    if buttons or entry.options.get(CONF_AUTO_ADD):
 
         @callback
         def _on_page_map(page_map: PageMap) -> None:
             entry.async_create_background_task(
                 hass, _async_apply_page_map(hass, entry, runtime, page_map), f"{DOMAIN} page map {entry.entry_id}"
             )
+            _schedule_auto_sync(hass, entry, runtime)
 
         pages_issue_handle: asyncio.TimerHandle | None = None
 
@@ -297,6 +304,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: CompanionConfigEntry) ->
         def _cancel_pages_issue_timer() -> None:
             if pages_issue_handle is not None:
                 pages_issue_handle.cancel()
+            if runtime.auto_sync_handle is not None:
+                runtime.auto_sync_handle.cancel()
+                runtime.auto_sync_handle = None
 
         entry.async_on_unload(_cancel_pages_issue_timer)
         runtime.watcher = PageMapWatcher(session, http.host, http.port, _on_page_map, _on_watch_available)
@@ -406,6 +416,94 @@ async def _async_learn_rotary(
     if changed:
         # Entities for this entry are created right after this, so no reload is needed.
         _persist_buttons(hass, entry, runtime, reload=False)
+
+
+@callback
+def _schedule_auto_sync(hass: HomeAssistant, entry: CompanionConfigEntry, runtime: CompanionRuntime) -> None:
+    """Run the auto-sync once the page map has been quiet for a moment."""
+    if not (entry.options.get(CONF_AUTO_ADD) or entry.options.get(CONF_AUTO_REMOVE)):
+        return
+    if runtime.auto_sync_handle is not None:
+        runtime.auto_sync_handle.cancel()
+
+    @callback
+    def _due() -> None:
+        runtime.auto_sync_handle = None
+        entry.async_create_background_task(
+            hass, _async_auto_sync(hass, entry, runtime), f"{DOMAIN} auto sync {entry.entry_id}"
+        )
+
+    runtime.auto_sync_handle = hass.loop.call_later(AUTO_SYNC_DEBOUNCE, _due)
+
+
+async def _async_auto_sync(hass: HomeAssistant, entry: CompanionConfigEntry, runtime: CompanionRuntime) -> None:
+    """Keep the button list in step with Companion, when the options ask for it.
+
+    Auto-add creates a button for every control Companion has that is not here yet
+    (page navigation keys excepted), named after what Companion draws on it. Auto-remove
+    drops buttons whose control no longer exists, instead of leaving them unavailable.
+    Both are off by default. After setup, a change reloads the entry so entities follow.
+    """
+    page_map = runtime.page_map
+    if page_map is None:
+        return
+    auto_add = bool(entry.options.get(CONF_AUTO_ADD))
+    auto_remove = bool(entry.options.get(CONF_AUTO_REMOVE))
+    if not (auto_add or auto_remove):
+        return
+    buttons = list(runtime.buttons)
+    changed = False
+
+    if auto_remove:
+        kept: list[ButtonConfig] = []
+        for button in buttons:
+            if button.control_id is not None and button.control_id not in page_map.controls:
+                _LOGGER.info("Companion button '%s' was deleted in Companion; removing it", button.display_name)
+                runtime.locations.pop(button.key, None)
+                changed = True
+                continue
+            kept.append(button)
+        buttons = kept
+
+    if auto_add:
+        known_ids = {button.control_id for button in buttons if button.control_id}
+        known_locations = {runtime.locations.get(button.key, button.location) for button in buttons}
+        candidates = {
+            control_id: location
+            for control_id, location in page_map.controls.items()
+            if control_id not in known_ids and location not in known_locations
+        }
+        if candidates:
+            try:
+                infos = await async_fetch_control_infos(
+                    async_get_clientsession(hass), runtime.http.host, runtime.http.port, sorted(candidates)
+                )
+            except CompanionTrpcError as err:
+                _LOGGER.debug("Auto-add: control details unavailable for %s: %s", entry.title, err)
+                infos = {}
+            wanted = {cid: loc for cid, loc in candidates.items() if cid in infos and not infos[cid].is_navigation}
+            rendered: dict[Location, str] = {}
+            if wanted:
+                try:
+                    states = await runtime.client.async_peek(list(wanted.values()))
+                    rendered = {loc: state.label for loc, state in states.items() if state.label}
+                except CompanionError as err:
+                    _LOGGER.debug("Auto-add: rendered text unavailable for %s: %s", entry.title, err)
+            in_deck_order = sorted(wanted.items(), key=lambda item: (item[1].page, item[1].row, item[1].column))
+            for control_id, location in in_deck_order:
+                info = infos[control_id]
+                name = rendered.get(location) or info.label or None
+                button = ButtonConfig(location=location, name=name, control_id=control_id, rotary=info.rotary)
+                _LOGGER.info("Companion button '%s' at %s added automatically", button.display_name, location)
+                buttons.append(button)
+                runtime.locations[button.key] = location
+                changed = True
+
+    if not changed:
+        return
+    runtime.buttons = buttons
+    # During setup the entities are created right after this; later, a reload makes them.
+    _persist_buttons(hass, entry, runtime, reload=runtime.listener_attached)
 
 
 async def _async_resubscribe(client: CompanionSatelliteClient, old: Location, new: Location) -> None:

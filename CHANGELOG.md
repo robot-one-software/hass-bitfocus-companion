@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.0
+
+- **Automatic sync (opt-in).** *Entity settings* can add a button entity for
+  every Companion button automatically, at start and whenever a button is
+  created in Companion, named after its rendered text; and remove the
+  entities of buttons deleted in Companion. Both switches are off by default.
+
 ## 0.6.7
 
 - **Add buttons names preset buttons after what Companion draws.** Buttons

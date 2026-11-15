@@ -112,11 +112,13 @@
       },
       "entity_settings": {
         "title": "Entity settings",
-        "description": "Each chosen Companion button is one button entity whose attributes carry the live text, colours and pressed state. A text sensor adds text history. Button images add an image entity per button showing its face exactly as Companion draws it (meters and all), refreshed on every redraw; the button's image_entity attribute names it.",
+        "description": "Each chosen Companion button is one button entity whose attributes carry the live text, colours and pressed state. A text sensor adds text history. Button images add an image entity per button showing its face exactly as Companion draws it (meters and all), refreshed on every redraw; the button's image_entity attribute names it. Automatic sync keeps the list in step with Companion: new buttons appear in Home Assistant by themselves (page navigation keys excepted, named after what Companion draws), and deleted buttons are removed instead of staying unavailable. Buttons you removed here on purpose come back while auto-add is on.",
         "data": {
           "button_sensors": "Also create a text sensor for each button",
           "button_images": "Also create an image of each button as Companion draws it",
-          "image_size": "Image size"
+          "image_size": "Image size",
+          "auto_add_buttons": "Automatically add new Companion buttons",
+          "auto_remove_buttons": "Automatically remove buttons deleted in Companion"
         }
       },
       "add_buttons": {

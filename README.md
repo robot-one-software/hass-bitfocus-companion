@@ -126,6 +126,15 @@ tap_action:
     entity_id: image.companion_watsons_mbp_facecam_image
 ```
 
+**Automatic sync (optional).** *Configure → Entity settings* has two switches,
+both off by default. *Automatically add new Companion buttons* creates a
+button entity for every button Companion has that is not in Home Assistant
+yet, now and whenever one is added later, named after what Companion draws on
+it (page navigation keys are skipped). *Automatically remove buttons deleted
+in Companion* drops the entities of buttons that no longer exist instead of
+leaving them unavailable. With auto-add on, a button you remove here on
+purpose comes back; turn auto-add off first if you want a curated list.
+
 **Moving buttons in Companion is fine.** Buttons are tracked by Companion's
 stable control id, so dragging one to another position or page keeps the same
 Home Assistant entity; the integration follows it and updates its stored

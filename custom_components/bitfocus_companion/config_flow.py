@@ -25,6 +25,8 @@ from homeassistant.helpers.selector import (
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .const import (
+    CONF_AUTO_ADD,
+    CONF_AUTO_REMOVE,
     CONF_BUTTON_IMAGES,
     CONF_BUTTON_SENSORS,
     CONF_BUTTONS,
@@ -401,6 +403,8 @@ class CompanionOptionsFlow(OptionsFlow):
                     CONF_BUTTON_SENSORS: bool(user_input.get(CONF_BUTTON_SENSORS)),
                     CONF_BUTTON_IMAGES: bool(user_input.get(CONF_BUTTON_IMAGES)),
                     CONF_IMAGE_SIZE: int(user_input.get(CONF_IMAGE_SIZE, DEFAULT_IMAGE_SIZE)),
+                    CONF_AUTO_ADD: bool(user_input.get(CONF_AUTO_ADD)),
+                    CONF_AUTO_REMOVE: bool(user_input.get(CONF_AUTO_REMOVE)),
                 }
             )
         sizes = [SelectOptionDict(value=str(size), label=f"{size} px") for size in IMAGE_SIZES]
@@ -411,6 +415,8 @@ class CompanionOptionsFlow(OptionsFlow):
                 vol.Optional(CONF_IMAGE_SIZE, default=str(DEFAULT_IMAGE_SIZE)): SelectSelector(
                     SelectSelectorConfig(options=sizes, mode=SelectSelectorMode.DROPDOWN)
                 ),
+                vol.Optional(CONF_AUTO_ADD, default=False): BooleanSelector(),
+                vol.Optional(CONF_AUTO_REMOVE, default=False): BooleanSelector(),
             }
         )
         return self.async_show_form(
@@ -421,6 +427,8 @@ class CompanionOptionsFlow(OptionsFlow):
                     CONF_BUTTON_SENSORS: options.get(CONF_BUTTON_SENSORS, False),
                     CONF_BUTTON_IMAGES: options.get(CONF_BUTTON_IMAGES, False),
                     CONF_IMAGE_SIZE: str(options.get(CONF_IMAGE_SIZE, DEFAULT_IMAGE_SIZE)),
+                    CONF_AUTO_ADD: options.get(CONF_AUTO_ADD, False),
+                    CONF_AUTO_REMOVE: options.get(CONF_AUTO_REMOVE, False),
                 },
             ),
         )

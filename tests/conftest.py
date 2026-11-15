@@ -322,6 +322,12 @@ class FakeCompanionHttp:
         self.pages.pop(key, None)
         await self._notify_pages()
 
+    async def add_control(self, key: str, control_id: str, config: dict) -> None:
+        """A new button drawn in Companion's editor."""
+        self.controls[control_id] = config
+        self.pages[key] = control_id
+        await self._notify_pages()
+
     async def _notify_pages(self) -> None:
         for ws, msg_id in list(self._page_subs):
             try:

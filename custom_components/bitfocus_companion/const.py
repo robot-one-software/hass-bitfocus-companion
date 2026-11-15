@@ -19,6 +19,8 @@ CONF_ROTARY = "rotary"
 CONF_BUTTON_SENSORS = "button_sensors"
 CONF_BUTTON_IMAGES = "button_images"
 CONF_IMAGE_SIZE = "image_size"
+CONF_AUTO_ADD = "auto_add_buttons"
+CONF_AUTO_REMOVE = "auto_remove_buttons"
 CONF_HTTP_PORT = "http_port"
 CONF_HTTP_HOST = "http_host"
 CONF_VARIABLES = "variables"
@@ -57,6 +59,8 @@ ISSUE_VARIABLES_RECORDED = "variables_recorded"
 MIN_SUBSCRIPTION_API = (1, 10, 0)
 
 CONNECT_TIMEOUT = 10.0
+# Companion fires page-map changes on every edit; wait for a quiet moment before syncing.
+AUTO_SYNC_DEBOUNCE = 3.0
 
 # mDNS service types Companion advertises its satellite TCP port under.
 # The long form is what 5.0 and 5.1 announce; the short form arrives in 5.2.
