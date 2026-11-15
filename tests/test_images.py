@@ -205,3 +205,11 @@ async def test_no_notice_without_recorder(hass: HomeAssistant, fake_companion: F
 
     entry = await _setup(hass, fake_companion.port, **{CONF_BUTTON_IMAGES: True})
     assert ir.async_get(hass).async_get_issue(DOMAIN, f"images_recorded_{entry.entry_id}") is None
+
+
+async def test_press_via_image_entity(hass: HomeAssistant, fake_companion: FakeCompanion) -> None:
+    """A picture card can aim the press action at the image it shows."""
+    await _setup(hass, fake_companion.port, **{CONF_BUTTON_IMAGES: True})
+    await _wait_until(lambda: hass.states.get(IMAGE_ENTITY) is not None)
+    await hass.services.async_call(DOMAIN, "press", {"entity_id": IMAGE_ENTITY}, blocking=True)
+    assert fake_companion.presses == [("1/0/2", True), ("1/0/2", False)]

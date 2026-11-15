@@ -1,131 +1,139 @@
 press:
+  target:
+    entity:
+      integration: bitfocus_companion
+      domain:
+      - button
+      - image
   fields:
-    page:
-      required: true
-      example: 1
-      selector:
-        number:
-          min: 1
-          max: 999
-          mode: box
-    row:
-      required: true
-      example: 0
-      selector:
-        number:
-          min: 0
-          max: 99
-          mode: box
-    column:
-      required: true
-      example: 2
-      selector:
-        number:
-          min: 0
-          max: 99
-          mode: box
-    server:
-      required: false
-      example: "Companion (Studio-Mac)"
-      selector:
-        text:
-
+    by_position:
+      collapsed: true
+      fields:
+        page:
+          required: false
+          example: 1
+          selector:
+            number:
+              min: 1
+              max: 999
+              mode: box
+        row:
+          required: false
+          example: 0
+          selector:
+            number:
+              min: 0
+              max: 99
+              mode: box
+        column:
+          required: false
+          example: 2
+          selector:
+            number:
+              min: 0
+              max: 99
+              mode: box
+        server:
+          required: false
+          example: Companion (Studio-Mac)
+          selector:
+            text: null
 down:
+  target:
+    entity:
+      integration: bitfocus_companion
+      domain:
+      - button
+      - image
   fields:
-    page:
-      required: true
-      example: 1
-      selector:
-        number:
-          min: 1
-          max: 999
-          mode: box
-    row:
-      required: true
-      example: 0
-      selector:
-        number:
-          min: 0
-          max: 99
-          mode: box
-    column:
-      required: true
-      example: 2
-      selector:
-        number:
-          min: 0
-          max: 99
-          mode: box
-    server:
-      required: false
-      selector:
-        text:
-
+    by_position:
+      collapsed: true
+      fields:
+        page:
+          required: false
+          example: 1
+          selector:
+            number:
+              min: 1
+              max: 999
+              mode: box
+        row:
+          required: false
+          example: 0
+          selector:
+            number:
+              min: 0
+              max: 99
+              mode: box
+        column:
+          required: false
+          example: 2
+          selector:
+            number:
+              min: 0
+              max: 99
+              mode: box
+        server:
+          required: false
+          example: Companion (Studio-Mac)
+          selector:
+            text: null
 up:
+  target:
+    entity:
+      integration: bitfocus_companion
+      domain:
+      - button
+      - image
   fields:
-    page:
-      required: true
-      example: 1
-      selector:
-        number:
-          min: 1
-          max: 999
-          mode: box
-    row:
-      required: true
-      example: 0
-      selector:
-        number:
-          min: 0
-          max: 99
-          mode: box
-    column:
-      required: true
-      example: 2
-      selector:
-        number:
-          min: 0
-          max: 99
-          mode: box
-    server:
-      required: false
-      selector:
-        text:
-
+    by_position:
+      collapsed: true
+      fields:
+        page:
+          required: false
+          example: 1
+          selector:
+            number:
+              min: 1
+              max: 999
+              mode: box
+        row:
+          required: false
+          example: 0
+          selector:
+            number:
+              min: 0
+              max: 99
+              mode: box
+        column:
+          required: false
+          example: 2
+          selector:
+            number:
+              min: 0
+              max: 99
+              mode: box
+        server:
+          required: false
+          example: Companion (Studio-Mac)
+          selector:
+            text: null
 rotate:
+  target:
+    entity:
+      integration: bitfocus_companion
+      domain:
+      - button
+      - image
   fields:
-    page:
-      required: true
-      example: 1
-      selector:
-        number:
-          min: 1
-          max: 999
-          mode: box
-    row:
-      required: true
-      example: 0
-      selector:
-        number:
-          min: 0
-          max: 99
-          mode: box
-    column:
-      required: true
-      example: 2
-      selector:
-        number:
-          min: 0
-          max: 99
-          mode: box
     direction:
-      required: true
+      required: false
       default: right
       selector:
         select:
           options:
-            - left
-            - right
+          - left
+          - right
           translation_key: direction
     amount:
       required: false
@@ -135,24 +143,51 @@ rotate:
           min: 1
           max: 100
           mode: box
-    server:
-      required: false
-      selector:
-        text:
-
+    by_position:
+      collapsed: true
+      fields:
+        page:
+          required: false
+          example: 1
+          selector:
+            number:
+              min: 1
+              max: 999
+              mode: box
+        row:
+          required: false
+          example: 0
+          selector:
+            number:
+              min: 0
+              max: 99
+              mode: box
+        column:
+          required: false
+          example: 2
+          selector:
+            number:
+              min: 0
+              max: 99
+              mode: box
+        server:
+          required: false
+          example: Companion (Studio-Mac)
+          selector:
+            text: null
 set_custom_variable:
   fields:
     name:
       required: true
       example: fader_level
       selector:
-        text:
+        text: null
     value:
       required: true
       example: -12.5
       selector:
-        text:
+        text: null
     server:
       required: false
       selector:
-        text:
+        text: null

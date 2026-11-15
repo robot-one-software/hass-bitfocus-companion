@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.2
+
+- **Actions take entities.** *Press button*, *Button down*, *Button up* and
+  *Rotate encoder* now offer the integration's button entities (and a
+  button's image entity) as their target, so a dashboard card can pick a
+  button from a list instead of typing page, row and column. Position fields
+  moved under a collapsed *By position* section for buttons without entities.
+  A *rotate left* / *rotate right* entity implies the direction.
+- The button-images Repairs notice links to the README section.
+
 ## 0.6.1
 
 - Button images are delivered at most 5 frames a second per button (always the

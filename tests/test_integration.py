@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+import voluptuous as vol
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT, STATE_OFF, STATE_ON, STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
@@ -167,3 +168,46 @@ async def test_brief_drop_keeps_entities_available(hass: HomeAssistant, fake_com
     await _wait_until(lambda: hass.states.get("binary_sensor.companion_test_connected").state == STATE_ON, timeout=10)
     await hass.async_block_till_done()
     assert hass.states.get("button.companion_test_camera_1").state != STATE_UNAVAILABLE
+
+
+async def test_services_by_entity(hass: HomeAssistant, fake_companion: FakeCompanion) -> None:
+    await _setup(hass, fake_companion.port)
+
+    await hass.services.async_call(DOMAIN, "press", {"entity_id": "button.companion_test_camera_1"}, blocking=True)
+    assert fake_companion.presses == [("1/0/2", True), ("1/0/2", False)]
+
+    # A button's text sensor is accepted too; so are several targets at once.
+    await hass.services.async_call(
+        DOMAIN,
+        "down",
+        {"entity_id": ["sensor.companion_test_camera_1_text", "button.companion_test_button_2_1_0"]},
+        blocking=True,
+    )
+    assert fake_companion.presses[-2:] == [("1/0/2", True), ("2/1/0", True)]
+
+    await hass.services.async_call(
+        DOMAIN, "rotate", {"entity_id": "button.companion_test_camera_1", "direction": "left"}, blocking=True
+    )
+    assert fake_companion.rotations == [("1/0/2", -1)]
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN, "press", {"entity_id": "binary_sensor.companion_test_connected"}, blocking=True
+        )
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(DOMAIN, "press", {}, blocking=True)
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(DOMAIN, "press", {"page": 1, "row": 0}, blocking=True)
+
+
+async def test_service_descriptions_load(hass: HomeAssistant, fake_companion: FakeCompanion) -> None:
+    """services.yaml (entity targets, collapsed section) passes Home Assistant's schema."""
+    from homeassistant.helpers.service import async_get_all_descriptions
+
+    await _setup(hass, fake_companion.port)
+    descriptions = (await async_get_all_descriptions(hass))[DOMAIN]
+    press = descriptions["press"]
+    assert press["target"]["entity"][0]["integration"] == DOMAIN
+    assert press["fields"]["by_position"]["collapsed"] is True
+    assert set(press["fields"]["by_position"]["fields"]) == {"page", "row", "column", "server"}
+    assert "direction" in descriptions["rotate"]["fields"]

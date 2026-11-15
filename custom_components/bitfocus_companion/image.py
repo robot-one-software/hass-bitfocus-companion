@@ -152,4 +152,5 @@ def _check_recorder(hass: HomeAssistant, entry: CompanionConfigEntry, entity_id:
         severity=ir.IssueSeverity.WARNING,
         translation_key=ISSUE_IMAGES_RECORDED,
         translation_placeholders={"name": entry.title, "glob": recorder_exclude_glob(entry)},
+        learn_more_url="https://github.com/robot-one-software/hass-bitfocus-companion#button-images",
     )

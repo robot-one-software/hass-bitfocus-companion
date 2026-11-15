@@ -167,7 +167,7 @@
   "services": {
     "press": {
       "name": "Press button",
-      "description": "Press and release a Companion button, exactly like tapping it on a Stream Deck.",
+      "description": "Press and release a Companion button, exactly like tapping it on a Stream Deck. Pick the button entity (its image entity works too), or open \"By position\" to name a button by page, row and column.",
       "fields": {
         "page": {
           "name": "Page",
@@ -184,12 +184,18 @@
         "server": {
           "name": "Server",
           "description": "Which Companion server, by name. Only needed when more than one is set up."
+        }
+      },
+      "sections": {
+        "by_position": {
+          "name": "By position",
+          "description": "For buttons that have no entity: page, row and column as shown in Companion."
         }
       }
     },
     "down": {
       "name": "Hold button down",
-      "description": "Press a Companion button and keep it held until 'Release button' is called.",
+      "description": "Press a Companion button and keep it held until 'Release button' is called. Pick the button entity (its image entity works too), or open \"By position\" to name a button by page, row and column.",
       "fields": {
         "page": {
           "name": "Page",
@@ -206,12 +212,18 @@
         "server": {
           "name": "Server",
           "description": "Which Companion server, by name. Only needed when more than one is set up."
+        }
+      },
+      "sections": {
+        "by_position": {
+          "name": "By position",
+          "description": "For buttons that have no entity: page, row and column as shown in Companion."
         }
       }
     },
     "up": {
       "name": "Release button",
-      "description": "Release a Companion button that was held with 'Hold button down'.",
+      "description": "Release a Companion button that was held with 'Hold button down'. Pick the button entity (its image entity works too), or open \"By position\" to name a button by page, row and column.",
       "fields": {
         "page": {
           "name": "Page",
@@ -229,11 +241,17 @@
           "name": "Server",
           "description": "Which Companion server, by name. Only needed when more than one is set up."
         }
+      },
+      "sections": {
+        "by_position": {
+          "name": "By position",
+          "description": "For buttons that have no entity: page, row and column as shown in Companion."
+        }
       }
     },
     "rotate": {
       "name": "Rotate encoder",
-      "description": "Turn a Companion button that has rotate actions, as a Stream Deck+ dial would.",
+      "description": "Turn a Companion button that has rotate actions, as a Stream Deck+ dial would. Pick the button entity (its image entity works too), or open \"By position\" to name a button by page, row and column.",
       "fields": {
         "page": {
           "name": "Page",
@@ -249,7 +267,7 @@
         },
         "direction": {
           "name": "Direction",
-          "description": "Left (anti-clockwise) or right (clockwise)."
+          "description": "Left (anti-clockwise) or right (clockwise). Not needed when the target is a rotate left/right entity."
         },
         "amount": {
           "name": "Steps",
@@ -258,6 +276,12 @@
         "server": {
           "name": "Server",
           "description": "Which Companion server, by name. Only needed when more than one is set up."
+        }
+      },
+      "sections": {
+        "by_position": {
+          "name": "By position",
+          "description": "For buttons that have no entity: page, row and column as shown in Companion."
         }
       }
     },
@@ -309,6 +333,9 @@
     },
     "http_unreachable": {
       "message": "Companion {name}'s HTTP API at {url} did not answer: {error}"
+    },
+    "not_a_button": {
+      "message": "{entity} is not one of this integration's button entities."
     }
   }
 }

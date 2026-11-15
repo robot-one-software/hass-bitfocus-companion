@@ -107,6 +107,11 @@ async def test_add_missing_buttons(
         "button", "press", {"entity_id": "button.companion_test_vol_rotate_right"}, blocking=True
     )
     assert fake_companion.rotations == [("2/1/1", 1)]
+    # The integration's own rotate action takes the side from a rotate-left entity.
+    await hass.services.async_call(
+        DOMAIN, "rotate", {"entity_id": "button.companion_test_vol_rotate_left", "amount": 2}, blocking=True
+    )
+    assert fake_companion.rotations[-1] == ("2/1/1", -2)
     assert hass.states.get("button.companion_test_rec_rotate_left") is None
 
     # Only the CAMERAS button is left to add; adding it empties the list.

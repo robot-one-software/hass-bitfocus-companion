@@ -84,7 +84,9 @@ Companion's `control_id`. Bind a dashboard label to `text` and it follows
 whatever Companion shows. *Configure → Entity settings* can add a text sensor
 per button as well, for history.
 
-**Button images (optional).** Turn on *Also create an image of each button* in
+### Button images
+
+Turn on *Also create an image of each button* in
 *Configure → Entity settings* and every chosen button also gets an
 `image.<server>_<name>_image` entity holding the button's face exactly as
 Companion draws it, audio meters and all, refreshed on every redraw (72, 96 or
@@ -103,7 +105,9 @@ recorder:
 ```
 
 To show a button's face on a dashboard and press it on tap, use a picture
-entity card bound to the image entity with the press as its tap action:
+entity card bound to the image entity, with *Press button* as its tap action
+aimed at that same image entity (the integration's actions accept a button's
+image entity as a target):
 
 ```yaml
 type: picture-entity
@@ -112,9 +116,9 @@ show_name: false
 show_state: false
 tap_action:
   action: perform-action
-  perform_action: button.press
+  perform_action: bitfocus_companion.press
   target:
-    entity_id: button.companion_watsons_mbp_facecam
+    entity_id: image.companion_watsons_mbp_facecam_image
 ```
 
 **Moving buttons in Companion is fine.** Buttons are tracked by Companion's
@@ -145,7 +149,23 @@ every second (change this under **Configure → HTTP API settings**).
 
 ## Use it
 
-Press a button from an automation or script:
+The actions `bitfocus_companion.press`, `down`, `up` and `rotate` take a
+**target**: pick one of the integration's button entities (or a button's
+image entity, handy for picture cards) and the action goes to that Companion
+button wherever it currently sits. A *rotate left* / *rotate right* entity
+implies its direction. Buttons without an entity are reachable under
+*By position* with page, row and column (and *server* when more than one
+Companion is set up).
+
+Press a button from an automation or script, by entity:
+
+```yaml
+action: bitfocus_companion.press
+target:
+  entity_id: button.companion_watsons_mbp_facecam
+```
+
+or by position:
 
 ```yaml
 action: bitfocus_companion.press

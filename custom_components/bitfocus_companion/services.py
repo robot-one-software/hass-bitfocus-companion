@@ -1,14 +1,16 @@
-"""Services: press, down, up and rotate any Companion button by location."""
+"""Services: press, down, up and rotate Companion buttons, by entity or by location."""
 
 from __future__ import annotations
 
 from functools import partial
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntryState
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 
 from .const import (
     ATTR_AMOUNT,
@@ -29,14 +31,26 @@ from .const import (
 from .http_api import CompanionHttpError, CompanionHttpNotFound
 from .satellite import CompanionError, CompanionSubscriptionsDisabled, Location
 
+# Unique ids of entities that belong to one button: ``{entry_id}_{key}{suffix}``.
+_BUTTON_ENTITY_SUFFIXES = ("_press", "_left", "_right", "_state", "_image")
+
+
+def _needs_entity_or_location(data: dict) -> dict:
+    has_location = all(field in data for field in (CONF_PAGE, CONF_ROW, CONF_COLUMN))
+    if not data.get(ATTR_ENTITY_ID) and not has_location:
+        raise vol.Invalid("Choose a button entity, or give page, row and column")
+    return data
+
+
 _LOCATION_FIELDS = {
-    vol.Required(CONF_PAGE): vol.All(vol.Coerce(int), vol.Range(min=1)),
-    vol.Required(CONF_ROW): vol.All(vol.Coerce(int), vol.Range(min=0)),
-    vol.Required(CONF_COLUMN): vol.All(vol.Coerce(int), vol.Range(min=0)),
+    vol.Optional(ATTR_ENTITY_ID): cv.entity_ids,
+    vol.Optional(CONF_PAGE): vol.All(vol.Coerce(int), vol.Range(min=1)),
+    vol.Optional(CONF_ROW): vol.All(vol.Coerce(int), vol.Range(min=0)),
+    vol.Optional(CONF_COLUMN): vol.All(vol.Coerce(int), vol.Range(min=0)),
     vol.Optional(ATTR_SERVER): cv.string,
 }
 
-PRESS_SCHEMA = vol.Schema(_LOCATION_FIELDS)
+PRESS_SCHEMA = vol.All(vol.Schema(_LOCATION_FIELDS), _needs_entity_or_location)
 SET_CUSTOM_VARIABLE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_NAME): cv.string,
@@ -45,12 +59,16 @@ SET_CUSTOM_VARIABLE_SCHEMA = vol.Schema(
     }
 )
 
-ROTATE_SCHEMA = vol.Schema(
-    {
-        **_LOCATION_FIELDS,
-        vol.Required(ATTR_DIRECTION): vol.In(["left", "right"]),
-        vol.Optional(ATTR_AMOUNT, default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=100)),
-    }
+ROTATE_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            **_LOCATION_FIELDS,
+            # Optional so a "rotate left" entity can imply its side.
+            vol.Optional(ATTR_DIRECTION): vol.In(["left", "right"]),
+            vol.Optional(ATTR_AMOUNT, default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=100)),
+        }
+    ),
+    _needs_entity_or_location,
 )
 
 
@@ -88,10 +106,54 @@ def _resolve_entry(hass: HomeAssistant, server: str | None):
     raise ServiceValidationError(translation_domain=DOMAIN, translation_key="server_required")
 
 
+def _targets(hass: HomeAssistant, call: ServiceCall) -> list[tuple[ConfigEntry, Location, str | None]]:
+    """Where the call is aimed: (entry, location, implied rotate side) per target."""
+    targets: list[tuple[ConfigEntry, Location, str | None]] = []
+    for entity_id in call.data.get(ATTR_ENTITY_ID) or []:
+        targets.append(_resolve_entity(hass, entity_id))
+    if all(field in call.data for field in (CONF_PAGE, CONF_ROW, CONF_COLUMN)):
+        entry = _resolve_entry(hass, call.data.get(ATTR_SERVER))
+        targets.append((entry, Location(call.data[CONF_PAGE], call.data[CONF_ROW], call.data[CONF_COLUMN]), None))
+    return targets
+
+
+def _resolve_entity(hass: HomeAssistant, entity_id: str) -> tuple[ConfigEntry, Location, str | None]:
+    """Map one of this integration's button entities to its server and current position."""
+    registry_entry = er.async_get(hass).async_get(entity_id)
+    entry = (
+        hass.config_entries.async_get_entry(registry_entry.config_entry_id)
+        if registry_entry is not None and registry_entry.platform == DOMAIN and registry_entry.config_entry_id
+        else None
+    )
+    if registry_entry is None or entry is None or entry.state is not ConfigEntryState.LOADED:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN, translation_key="not_a_button", translation_placeholders={"entity": entity_id}
+        )
+    prefix = f"{entry.entry_id}_"
+    unique_id = registry_entry.unique_id or ""
+    key: str | None = None
+    side: str | None = None
+    if unique_id.startswith(prefix):
+        for suffix in _BUTTON_ENTITY_SUFFIXES:
+            if unique_id.endswith(suffix):
+                key = unique_id[len(prefix) : -len(suffix)]
+                side = suffix[1:] if suffix in ("_left", "_right") else None
+                break
+    location = entry.runtime_data.location_of(key) if key else None
+    if location is None:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN, translation_key="not_a_button", translation_placeholders={"entity": entity_id}
+        )
+    return entry, location, side
+
+
 async def _async_handle(hass: HomeAssistant, action: str, call: ServiceCall) -> None:
-    entry = _resolve_entry(hass, call.data.get(ATTR_SERVER))
+    for entry, location, side in _targets(hass, call):
+        await _async_act(entry, action, location, side, call)
+
+
+async def _async_act(entry: ConfigEntry, action: str, location: Location, side: str | None, call: ServiceCall) -> None:
     client = entry.runtime_data.client
-    location = Location(call.data[CONF_PAGE], call.data[CONF_ROW], call.data[CONF_COLUMN])
     try:
         if action == SERVICE_PRESS:
             await client.async_press(location)
@@ -101,7 +163,8 @@ async def _async_handle(hass: HomeAssistant, action: str, call: ServiceCall) -> 
             await client.async_set_pressed(location, False)
         elif action == SERVICE_ROTATE:
             amount = call.data[ATTR_AMOUNT]
-            await client.async_rotate(location, amount if call.data[ATTR_DIRECTION] == "right" else -amount)
+            direction = call.data.get(ATTR_DIRECTION) or side or "right"
+            await client.async_rotate(location, amount if direction == "right" else -amount)
     except CompanionSubscriptionsDisabled as err:
         raise HomeAssistantError(
             translation_domain=DOMAIN,
