@@ -39,6 +39,7 @@ from .const import (
     DOMAIN,
     EVENT_BUTTON,
     ISSUE_HTTP_UNREACHABLE,
+    ISSUE_IMAGES_RECORDED,
     ISSUE_PAGES_UNAVAILABLE,
     ISSUE_SUBSCRIPTIONS,
     ISSUE_TOO_OLD,
@@ -250,6 +251,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: CompanionConfigEntry) ->
             await _async_learn_rotary(hass, entry, runtime, session)
 
     _prune_removed_entities(hass, entry, runtime)
+    if image_size_from_options(entry.options) is None:
+        ir.async_delete_issue(hass, DOMAIN, f"{ISSUE_IMAGES_RECORDED}_{entry.entry_id}")
 
     for key, location in list(runtime.locations.items()):
         try:
@@ -311,7 +314,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: CompanionConfigEntry) -
     if runtime.watcher is not None:
         await runtime.watcher.stop()
     await runtime.client.async_stop()
-    for issue in (ISSUE_SUBSCRIPTIONS, ISSUE_TOO_OLD, ISSUE_HTTP_UNREACHABLE, ISSUE_PAGES_UNAVAILABLE):
+    for issue in (
+        ISSUE_SUBSCRIPTIONS,
+        ISSUE_TOO_OLD,
+        ISSUE_HTTP_UNREACHABLE,
+        ISSUE_PAGES_UNAVAILABLE,
+        ISSUE_IMAGES_RECORDED,
+    ):
         ir.async_delete_issue(hass, DOMAIN, f"{issue}_{entry.entry_id}")
     return unload_ok
 

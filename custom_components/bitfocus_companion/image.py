@@ -2,23 +2,33 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
+from time import monotonic
 from typing import Any
 
 from homeassistant.components.image import ImageEntity
+from homeassistant.const import MATCH_ALL
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
+from homeassistant.util import slugify
 
 from . import CompanionConfigEntry
-from .const import signal_button
+from .const import DOMAIN, ISSUE_IMAGES_RECORDED, signal_button
 from .entity import CompanionButtonEntity
 from .helpers import ButtonConfig, image_size_from_options
 from .satellite import ButtonState
 
 _LOGGER = logging.getLogger(__name__)
+
+# Companion can redraw a meter button many times a second; Home Assistant gets at most
+# this many frames per second per button, always the latest one.
+MAX_FRAMES_PER_SECOND = 5
+MIN_FRAME_INTERVAL = 1 / MAX_FRAMES_PER_SECOND
 
 
 async def async_setup_entry(
@@ -44,6 +54,9 @@ class CompanionButtonImage(CompanionButtonEntity, ImageEntity):
     """The rendered face of one button, refreshed whenever Companion redraws it."""
 
     _attr_content_type = "image/png"
+    # Every frame is a state change; keep the recorder from storing a copy of the
+    # button attributes with each one.
+    _unrecorded_attributes = frozenset({MATCH_ALL})
 
     def __init__(self, hass: HomeAssistant, entry: CompanionConfigEntry, button: ButtonConfig) -> None:
         # ImageEntity keeps an httpx client in ``_client`` for URL-backed images; this entity
@@ -54,6 +67,8 @@ class CompanionButtonImage(CompanionButtonEntity, ImageEntity):
         self._attr_name = f"{button.display_name} image"
         self._source: bytes | None = None
         self._image: bytes | None = None
+        self._last_write = 0.0
+        self._flush_handle: asyncio.TimerHandle | None = None
         self._sync()
 
     def _sync(self) -> None:
@@ -78,10 +93,29 @@ class CompanionButtonImage(CompanionButtonEntity, ImageEntity):
         # The button entity names this image in its attributes; it may have written its
         # state before this entity had an id, so have it refresh now.
         async_dispatcher_send(self.hass, signal_button(self._entry.entry_id, self._key), self.button_state)
+        _check_recorder(self.hass, self._entry, self.entity_id)
+
+    async def async_will_remove_from_hass(self) -> None:
+        if self._flush_handle is not None:
+            self._flush_handle.cancel()
+            self._flush_handle = None
+        await super().async_will_remove_from_hass()
 
     @callback
     def _handle_update(self, state: ButtonState | None) -> None:
         self._sync()
+        if self._flush_handle is not None:
+            return  # a write is already due; it will carry the latest frame
+        since_last = monotonic() - self._last_write
+        if since_last >= MIN_FRAME_INTERVAL:
+            self._flush()
+        else:
+            self._flush_handle = self.hass.loop.call_later(MIN_FRAME_INTERVAL - since_last, self._flush)
+
+    @callback
+    def _flush(self) -> None:
+        self._flush_handle = None
+        self._last_write = monotonic()
         self.async_write_ha_state()
 
     async def async_image(self) -> bytes | None:
@@ -90,3 +124,32 @@ class CompanionButtonImage(CompanionButtonEntity, ImageEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return self.button_attributes()
+
+
+def recorder_exclude_glob(entry: CompanionConfigEntry) -> str:
+    """An entity glob matching this server's button images, for the recorder's exclude list."""
+    return f"image.{slugify(entry.title)}_*_image"
+
+
+@callback
+def _check_recorder(hass: HomeAssistant, entry: CompanionConfigEntry, entity_id: str) -> None:
+    """Point out, once, that button images are filling the history database.
+
+    The issue is not persistent, so it comes back on each start only while an image
+    entity is still being recorded.
+    """
+    if "recorder" not in hass.config.components:
+        return
+    from homeassistant.components.recorder import is_entity_recorded  # noqa: PLC0415
+
+    if not is_entity_recorded(hass, entity_id):
+        return
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        f"{ISSUE_IMAGES_RECORDED}_{entry.entry_id}",
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key=ISSUE_IMAGES_RECORDED,
+        translation_placeholders={"name": entry.title, "glob": recorder_exclude_glob(entry)},
+    )

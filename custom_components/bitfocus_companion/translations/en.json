@@ -158,6 +158,10 @@
     "pages_unavailable": {
       "title": "Companion's page map is not reachable",
       "description": "Home Assistant follows Companion buttons by their stable id when you move them between positions or pages, using Companion's admin API at http://{host}:{port}. That API did not answer for {name}, so buttons are tracked by position only until it is back: a moved button would stop updating until you re-add it.\n\nCheck the HTTP API settings under the integration's Configure menu, and that Companion's launcher listens on an address Home Assistant can reach."
+    },
+    "images_recorded": {
+      "title": "Keep Companion button images out of the history database",
+      "description": "Button images for {name} are on, and Home Assistant is recording every redraw in its history database. A meter button redraws several times a second, which adds up to a lot of rows nobody looks at. Dashboards only need the live image, so exclude these entities from the recorder. Add this to configuration.yaml and restart:\n\n```yaml\nrecorder:\n  exclude:\n    entity_globs:\n      - \"{glob}\"\n```\n\nThis notice goes away on the next start once the images are no longer recorded."
     }
   },
   "services": {

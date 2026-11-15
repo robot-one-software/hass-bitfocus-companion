@@ -50,6 +50,7 @@ ISSUE_SUBSCRIPTIONS = "subscriptions_disabled"
 ISSUE_TOO_OLD = "companion_too_old"
 ISSUE_HTTP_UNREACHABLE = "http_unreachable"
 ISSUE_PAGES_UNAVAILABLE = "pages_unavailable"
+ISSUE_IMAGES_RECORDED = "images_recorded"
 
 # Companion gained button subscriptions with satellite API 1.10 (Companion 4.3).
 MIN_SUBSCRIPTION_API = (1, 10, 0)

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.1
+
+- Button images are delivered at most 5 frames a second per button (always the
+  latest frame) and their attributes are no longer written to the history
+  database. A Repairs notice shows the recorder lines to add when the image
+  entities are still being recorded, so history does not fill up with frames.
+- README: how to show a button's face on a dashboard and press it on tap.
+
 ## 0.6.0
 
 - **Button images (opt-in).** *Configure → Entity settings* can add an

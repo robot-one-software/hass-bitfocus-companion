@@ -16,8 +16,16 @@ from custom_components.bitfocus_companion.satellite import format_message, parse
 
 
 @pytest.fixture(autouse=True)
-def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
-    """Let the test Home Assistant load custom_components."""
+def auto_enable_custom_integrations(request: pytest.FixtureRequest) -> None:
+    """Let the test Home Assistant load custom_components.
+
+    Requested by name rather than as an argument so that, for tests using
+    ``recorder_mock``, the recorder's database URL is fixed before ``hass`` exists,
+    which that fixture insists on.
+    """
+    if "recorder_mock" in request.fixturenames:
+        request.getfixturevalue("recorder_db_url")
+    request.getfixturevalue("enable_custom_integrations")
 
 
 @pytest.fixture(autouse=True)

@@ -88,9 +88,34 @@ per button as well, for history.
 *Configure → Entity settings* and every chosen button also gets an
 `image.<server>_<name>_image` entity holding the button's face exactly as
 Companion draws it, audio meters and all, refreshed on every redraw (72, 96 or
-144 px). Show it with any picture card or image widget; the `button.` entity's
-`image_entity` attribute names it. Off by default: it is a few kilobytes per
-redraw, which meter buttons do several times a second.
+144 px, at most 5 frames a second). The `button.` entity's `image_entity`
+attribute names it. Off by default.
+
+Each frame is a state change, so with images on, keep them out of the history
+database. Home Assistant raises a Repairs notice with the exact lines; they
+look like this (the glob is the server's name as it appears in entity ids):
+
+```yaml
+recorder:
+  exclude:
+    entity_globs:
+      - "image.companion_watsons_mbp_*_image"
+```
+
+To show a button's face on a dashboard and press it on tap, use a picture
+entity card bound to the image entity with the press as its tap action:
+
+```yaml
+type: picture-entity
+entity: image.companion_watsons_mbp_facecam_image
+show_name: false
+show_state: false
+tap_action:
+  action: perform-action
+  perform_action: button.press
+  target:
+    entity_id: button.companion_watsons_mbp_facecam
+```
 
 **Moving buttons in Companion is fine.** Buttons are tracked by Companion's
 stable control id, so dragging one to another position or page keeps the same
@@ -177,7 +202,10 @@ Give a dashboard button the tap action **Perform action** →
 `button.` entity you created. Bind the button's label or colour to the matching
 button entity's `text` and `background_color` attributes to mirror Companion's
 feedback, or, with button images on, show the `image.` entity for the full
-Companion rendering.
+Companion rendering. The image URL in the entity's `entity_picture` attribute
+stays the same between frames (its token rotates every five minutes), so a
+widget must reload it whenever the image entity's state changes, for example
+by appending the state to the URL, as Home Assistant's own cards do.
 
 ## Troubleshooting
 

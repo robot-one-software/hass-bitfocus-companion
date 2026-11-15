@@ -157,3 +157,51 @@ async def test_turning_images_off_removes_entities(hass: HomeAssistant, fake_com
 async def test_sizes_are_requested(hass: HomeAssistant, fake_companion: FakeCompanion, size: int) -> None:
     await _setup(hass, fake_companion.port, **{CONF_BUTTON_IMAGES: True, CONF_IMAGE_SIZE: size})
     assert fake_companion.last_add_sub["BITMAP"] == str(size)
+
+
+async def test_frames_are_coalesced(hass: HomeAssistant, fake_companion: FakeCompanion) -> None:
+    fake_companion.texts["1/0/2"] = "CAM 1"
+    await _setup(hass, fake_companion.port, **{CONF_BUTTON_IMAGES: True})
+    await _wait_until(lambda: (state := hass.states.get(IMAGE_ENTITY)) is not None and state.state)
+    before = hass.states.get(IMAGE_ENTITY)
+    # Companion redraws far faster than once per frame interval: toggle the face 20 times.
+    for i in range(20):
+        fake_companion.texts["1/0/2"] = "" if i % 2 == 0 else "CAM 1"
+        await fake_companion.push_state("1/0/2", fake_companion.texts["1/0/2"])
+    await asyncio.sleep(0.5)
+    after = hass.states.get(IMAGE_ENTITY)
+    assert after.state != before.state
+    assert after.attributes["text"] == "CAM 1"  # the last frame won
+    assert "access_token" in after.attributes
+
+
+async def test_recorder_notice_when_images_recorded(
+    recorder_mock, hass: HomeAssistant, fake_companion: FakeCompanion
+) -> None:
+    """The recorder fixture must be set up before hass, hence its position."""
+    from homeassistant.helpers import issue_registry as ir
+
+    entry = await _setup(hass, fake_companion.port, **{CONF_BUTTON_IMAGES: True})
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, f"images_recorded_{entry.entry_id}")
+    assert issue is not None
+    assert issue.translation_placeholders["glob"] == "image.companion_test_*_image"
+
+    # Turning images off clears it.
+    hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_BUTTON_IMAGES: False})
+    await hass.async_block_till_done()
+    assert ir.async_get(hass).async_get_issue(DOMAIN, f"images_recorded_{entry.entry_id}") is None
+
+
+@pytest.mark.parametrize("recorder_config", [{"exclude": {"entity_globs": ["image.companion_test_*_image"]}}])
+async def test_no_notice_when_excluded(recorder_mock, hass: HomeAssistant, fake_companion: FakeCompanion) -> None:
+    from homeassistant.helpers import issue_registry as ir
+
+    entry = await _setup(hass, fake_companion.port, **{CONF_BUTTON_IMAGES: True})
+    assert ir.async_get(hass).async_get_issue(DOMAIN, f"images_recorded_{entry.entry_id}") is None
+
+
+async def test_no_notice_without_recorder(hass: HomeAssistant, fake_companion: FakeCompanion) -> None:
+    from homeassistant.helpers import issue_registry as ir
+
+    entry = await _setup(hass, fake_companion.port, **{CONF_BUTTON_IMAGES: True})
+    assert ir.async_get(hass).async_get_issue(DOMAIN, f"images_recorded_{entry.entry_id}") is None
