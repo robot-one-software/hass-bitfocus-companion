@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.6
+
+- **Fast-changing variables raise a recorder notice.** A variable sensor
+  that changes 60 times within five minutes (levels, meters, timecode) is
+  listed in a Repairs notice with the exact recorder exclude lines, like
+  button images are.
+
 ## 0.6.5
 
 - The page scan no longer offers Companion's page up / page down / page

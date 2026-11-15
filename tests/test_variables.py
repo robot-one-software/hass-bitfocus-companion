@@ -319,3 +319,28 @@ async def test_options_catalog_unavailable_falls_back(
     result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "add_variables"})
     assert result["step_id"] == "add_variables"
     assert result["errors"] == {"base": "catalog_unavailable"}
+
+
+async def test_fast_changing_variable_raises_recorder_notice(
+    recorder_mock, hass: HomeAssistant, fake_companion: FakeCompanion, fake_http: FakeCompanionHttp
+) -> None:
+    from homeassistant.helpers import issue_registry as ir
+
+    from custom_components.bitfocus_companion.const import DOMAIN as CDOMAIN
+
+    variables = [{"ref": "RCV:combo1_livelevelL", "unit": "dB"}]
+    entry = await _setup(hass, fake_companion.port, fake_http.port, variables)
+    coordinator = entry.runtime_data.coordinator
+    issue_id = f"variables_recorded_{entry.entry_id}"
+    for i in range(59):
+        fake_http.variables["RCV:combo1_livelevelL"] = str(-30 + i * 0.25)
+        await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert ir.async_get(hass).async_get_issue(CDOMAIN, issue_id) is None  # 60 changes needed
+    fake_http.variables["RCV:combo1_livelevelL"] = "-1"
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    issue = ir.async_get(hass).async_get_issue(CDOMAIN, issue_id)
+    assert issue is not None
+    assert issue.translation_placeholders["entities"] == "      - sensor.companion_test_rcv_combo1_livelevell"
+    assert issue.translation_placeholders["count"] == "1"

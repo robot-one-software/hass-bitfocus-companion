@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -14,6 +14,7 @@ from .const import CONF_BUTTON_SENSORS
 from .coordinator import VariablesCoordinator
 from .entity import MAX_STATE_LENGTH, CompanionButtonEntity, CompanionEntity
 from .helpers import ButtonConfig, VariableConfig
+from .recorder_notice import ChurnTracker, note_churny_entity
 
 
 async def async_setup_entry(
@@ -53,6 +54,8 @@ class CompanionVariableSensor(CoordinatorEntity[VariablesCoordinator], Companion
         CompanionEntity.__init__(self, entry)
         self._variable = variable
         self._attr_unique_id = variable_unique_id(entry, variable)
+        self._churn = ChurnTracker()
+        self._last_raw: str | None = None
         self._attr_name = variable.display_name
         if variable.unit:
             self._attr_native_unit_of_measurement = variable.unit
@@ -61,6 +64,17 @@ class CompanionVariableSensor(CoordinatorEntity[VariablesCoordinator], Companion
     @property
     def available(self) -> bool:
         return self.coordinator.last_update_success
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        # A level meter changes on every poll: once it has done so often enough,
+        # tell the user how to keep it out of the history database.
+        raw = self._raw
+        if raw != self._last_raw:
+            self._last_raw = raw
+            if self._churn.note_change() and self.entity_id:
+                note_churny_entity(self.hass, self._entry, self.entity_id)
+        super()._handle_coordinator_update()
 
     @property
     def _raw(self) -> str | None:

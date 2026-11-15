@@ -152,6 +152,12 @@ as input names or timecode.
 Each variable becomes `sensor.<server>_<connection>_<variable>` and is polled
 every second (change this under **Configure → HTTP API settings**).
 
+Audio levels and meters change on every poll, and Home Assistant records
+every change. When a variable sensor has changed 60 times within five minutes,
+a Repairs notice lists the exact sensors to add to the recorder's exclude list
+(the same treatment as button images). Excluded sensors still show live values
+on dashboards; they just keep no history.
+
 ## Use it
 
 The actions `bitfocus_companion.press`, `down`, `up` and `rotate` take a

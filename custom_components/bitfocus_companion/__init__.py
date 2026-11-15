@@ -43,6 +43,7 @@ from .const import (
     ISSUE_PAGES_UNAVAILABLE,
     ISSUE_SUBSCRIPTIONS,
     ISSUE_TOO_OLD,
+    ISSUE_VARIABLES_RECORDED,
     MIN_SUBSCRIPTION_API,
     signal_button,
     signal_connection,
@@ -104,6 +105,8 @@ class CompanionRuntime:
     suppress_reload: bool = False
     # Set once the options update listener exists; before that, writes never trigger it.
     listener_attached: bool = False
+    # Entity ids seen changing fast enough to flood the recorder (see recorder_notice).
+    churny_entities: set[str] = field(default_factory=set)
 
     def key_at(self, location: Location) -> str | None:
         for key, current in self.locations.items():
@@ -320,6 +323,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: CompanionConfigEntry) -
         ISSUE_HTTP_UNREACHABLE,
         ISSUE_PAGES_UNAVAILABLE,
         ISSUE_IMAGES_RECORDED,
+        ISSUE_VARIABLES_RECORDED,
     ):
         ir.async_delete_issue(hass, DOMAIN, f"{issue}_{entry.entry_id}")
     return unload_ok
