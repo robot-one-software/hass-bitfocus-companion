@@ -331,6 +331,21 @@ class CompanionOptionsFlow(OptionsFlow):
         placeholders["total"] = str(sum(1 for info in infos.values() if not info.is_navigation))
         placeholders["count"] = str(len(missing))
 
+        # The configuration's text may be a variable template; Companion renders the real
+        # words, so look at what it draws for a moment and prefer that for names.
+        rendered: dict[Location, str] = {}
+        if missing:
+            runtime = getattr(self.config_entry, "runtime_data", None)
+            if runtime is not None:
+                try:
+                    states = await runtime.client.async_peek([location for location, _ in missing])
+                    rendered = {location: state.label for location, state in states.items() if state.label}
+                except CompanionError as err:
+                    _LOGGER.debug("Could not read rendered button text: %s", err)
+
+        def label_for(location: Location, info: ControlInfo) -> str:
+            return rendered.get(location) or info.label
+
         if user_input is not None and "base" not in errors:
             chosen = set(user_input.get(CONF_BUTTONS, []))
             items = list(self.config_entry.options.get(CONF_BUTTONS, []))
@@ -344,8 +359,8 @@ class CompanionOptionsFlow(OptionsFlow):
                     CONF_CONTROL_ID: info.control_id,
                     CONF_ROTARY: info.rotary,
                 }
-                if info.label:
-                    item["name"] = info.label
+                if label_for(location, info):
+                    item["name"] = label_for(location, info)
                 items.append(item)
             return self.async_create_entry(data={**self.config_entry.options, CONF_BUTTONS: items})
 
@@ -355,7 +370,8 @@ class CompanionOptionsFlow(OptionsFlow):
         choices = [
             SelectOptionDict(
                 value=info.control_id,
-                label=f"Page {location.page} · {location.row}/{location.column}  {info.label or '(no text)'}"
+                label=f"Page {location.page} · {location.row}/{location.column}  "
+                + (label_for(location, info) or "(no text)")
                 + ("  ⟳ rotary" if info.rotary else ""),
             )
             for location, info in missing

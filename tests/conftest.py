@@ -233,6 +233,7 @@ class FakeCompanionHttp:
             "1/1/1": "bank:cameras",
             "2/1/0": "bank:rec",
             "2/1/1": "bank:dial",
+            "3/0/0": "bank:pergola",
         }
         self.page_count = 3
         # control id -> config as controls.watchControl reports it
@@ -242,6 +243,8 @@ class FakeCompanionHttp:
             "bank:cameras": _layered("CAMERAS"),
             "bank:rec": _layered("REC"),
             "bank:dial": {**_layered("VOL"), "options": {"rotaryActions": True}},
+            # A module preset: the text is a variable template that Companion renders at runtime.
+            "bank:pergola": _layered("$(NOCE:entity.$(local:entity-id))"),
         }
         self._page_subs: list[tuple[web.WebSocketResponse, int]] = []
         self._ws_clients: list[web.WebSocketResponse] = []

@@ -67,6 +67,8 @@ async def _setup(hass: HomeAssistant, sat_port: int, http_port: int, buttons: li
 async def test_add_missing_buttons(
     hass: HomeAssistant, fake_companion: FakeCompanion, fake_http: FakeCompanionHttp
 ) -> None:
+    # What Companion actually draws on the preset button (its config holds a template).
+    fake_companion.texts["3/0/0"] = "Pergola Lights"
     entry = await _setup(
         hass,
         fake_companion.port,
@@ -79,25 +81,30 @@ async def test_add_missing_buttons(
     assert result["errors"] == {}
     assert result["description_placeholders"] == {
         "url": f"http://127.0.0.1:{fake_http.port}",
-        "count": "3",
-        "total": "4",
+        "count": "4",
+        "total": "5",
     }
     options = {o["value"]: o["label"] for o in result["data_schema"].schema[CONF_BUTTONS].config["options"]}
-    # Page-up is left out; the already-added camera is left out; the dial is flagged.
+    # Page-up is left out; the already-added camera is left out; the dial is flagged;
+    # the preset is named after its rendered text, not its $(...) template.
     assert options == {
         "bank:cameras": "Page 1 · 1/1  CAMERAS",
         "bank:rec": "Page 2 · 1/0  REC",
         "bank:dial": "Page 2 · 1/1  VOL  ⟳ rotary",
+        "bank:pergola": "Page 3 · 0/0  Pergola Lights",
     }
+    # The peek released its temporary subscriptions again.
+    assert fake_companion.subscription_count() == 1
 
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {CONF_BUTTONS: ["bank:rec", "bank:dial"]}
+        result["flow_id"], {CONF_BUTTONS: ["bank:rec", "bank:dial", "bank:pergola"]}
     )
     await hass.async_block_till_done()
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.options[CONF_BUTTONS][1:] == [
         {"page": 2, "row": 1, "column": 0, "control_id": "bank:rec", "rotary": False, "name": "REC"},
         {"page": 2, "row": 1, "column": 1, "control_id": "bank:dial", "rotary": True, "name": "VOL"},
+        {"page": 3, "row": 0, "column": 0, "control_id": "bank:pergola", "rotary": False, "name": "Pergola Lights"},
     ]
     assert hass.states.get("button.companion_test_rec") is not None
     vol = hass.states.get("button.companion_test_vol")

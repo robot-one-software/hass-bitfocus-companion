@@ -665,9 +665,19 @@ class CompanionSatelliteClient:
 
         Cells that were not already subscribed are released again afterwards.
         """
+        locations = [Location(page, row, column) for row in range(max_row + 1) for column in range(max_column + 1)]
+        return await self.async_peek(locations, settle)
+
+    async def async_peek(
+        self, locations: list[Location], settle: float = SCAN_SETTLE_SECONDS
+    ) -> dict[Location, ButtonState]:
+        """Briefly subscribe to the given locations and return what Companion renders there.
+
+        This is the rendered state (variables and expressions resolved), unlike the admin
+        API's configuration. Locations that were not already subscribed are released again.
+        """
         if not self.connected:
             raise CompanionConnectionError("Not connected to Companion")
-        locations = [Location(page, row, column) for row in range(max_row + 1) for column in range(max_column + 1)]
         temporary = [location for location in locations if location.sub_id not in self._desired]
         try:
             for location in locations:

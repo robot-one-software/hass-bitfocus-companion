@@ -344,11 +344,14 @@ def _text_from_config(config: dict[str, Any]) -> str:
                     else:
                         value = text
                     if isinstance(value, str) and value.strip():
-                        return value
+                        # "$(label:name)" is a variable reference rendered at runtime (module presets
+                        # use these); the template is no name for anything, so leave it to the caller
+                        # to use the rendered text instead.
+                        return "" if "$(" in value else value
             return ""
         text = style.get("text")
         if isinstance(text, str):
-            return text
+            return "" if "$(" in text else text
     return ""
 
 

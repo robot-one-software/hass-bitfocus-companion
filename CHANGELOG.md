@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.7
+
+- **Add buttons names preset buttons after what Companion draws.** Buttons
+  whose text is a variable template (module presets, e.g. the Home Assistant
+  module's `$(NOCE:entity.…)`) were named after the template. The picker now
+  looks at the rendered button for a moment and uses that text; templates are
+  never used as names.
+
 ## 0.6.6
 
 - **Fast-changing variables raise a recorder notice.** A variable sensor
