@@ -94,14 +94,14 @@ Companion draws it, audio meters and all, refreshed on every redraw (72, 96 or
 attribute names it. Off by default.
 
 Each frame is a state change, so with images on, keep them out of the history
-database. Home Assistant raises a Repairs notice with the exact lines; they
-look like this (the glob is the server's name as it appears in entity ids):
+database. Home Assistant raises a Repairs notice with the exact lines, taken
+from the entity ids that exist; they look like this:
 
 ```yaml
 recorder:
   exclude:
     entity_globs:
-      - "image.companion_watsons_mbp_*_image"
+      - "image.dungeon_bitfocus_*"
 ```
 
 To show a button's face on a dashboard and press it on tap, use a picture

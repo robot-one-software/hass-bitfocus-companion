@@ -11,6 +11,7 @@ from typing import Any
 from homeassistant.components.image import ImageEntity
 from homeassistant.const import MATCH_ALL
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -127,9 +128,37 @@ class CompanionButtonImage(CompanionButtonEntity, ImageEntity):
         return self.button_attributes()
 
 
-def recorder_exclude_glob(entry: CompanionConfigEntry) -> str:
-    """An entity glob matching this server's button images, for the recorder's exclude list."""
-    return f"image.{slugify(entry.title)}_*_image"
+def recorder_exclude_glob(
+    entry: CompanionConfigEntry, image_ids: list[str] | None = None, device_name: str | None = None
+) -> str:
+    """An entity glob matching this server's button images, for the recorder's exclude list.
+
+    Entity ids are minted from the *device* name at the time each entity is created, which
+    is not always the config entry's title (the user may have renamed the device first), so
+    the glob is taken from the ids that exist: their longest common prefix up to a word
+    boundary. With a single id there is no prefix to find, so the device name, then the
+    entry title, stand in.
+    """
+    ids = sorted({image_id for image_id in image_ids or [] if image_id.startswith("image.")})
+    if len(ids) >= 2:
+        prefix = common_word_prefix([image_id[len("image.") :] for image_id in ids])
+        if prefix:
+            return f"image.{prefix}*"
+    return f"image.{slugify(device_name or entry.title)}_*"
+
+
+def common_word_prefix(names: list[str]) -> str:
+    """The longest prefix shared by all names, cut back to the last ``_`` so it ends on a word."""
+    if not names:
+        return ""
+    prefix = names[0]
+    for name in names[1:]:
+        while not name.startswith(prefix):
+            prefix = prefix[:-1]
+            if not prefix:
+                return ""
+    cut = prefix.rfind("_")
+    return prefix[: cut + 1] if cut > 0 else ""
 
 
 @callback
@@ -150,6 +179,8 @@ def _check_recorder(hass: HomeAssistant, entry: CompanionConfigEntry, entity_id:
     image_ids = sorted(
         e.entity_id for e in er.async_entries_for_config_entry(registry, entry.entry_id) if e.domain == "image"
     ) or [entity_id]
+    devices = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
+    device_name = next((d.name_by_user or d.name for d in devices if d.name_by_user or d.name), None)
     ir.async_create_issue(
         hass,
         DOMAIN,
@@ -159,7 +190,7 @@ def _check_recorder(hass: HomeAssistant, entry: CompanionConfigEntry, entity_id:
         translation_key=ISSUE_IMAGES_RECORDED,
         translation_placeholders={
             "name": entry.title,
-            "glob": recorder_exclude_glob(entry),
+            "glob": recorder_exclude_glob(entry, image_ids, device_name),
             "entities": "\n".join(f"      - {image_id}" for image_id in image_ids),
         },
         learn_more_url="https://github.com/robot-one-software/hass-bitfocus-companion#button-images",

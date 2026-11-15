@@ -184,7 +184,8 @@ async def test_recorder_notice_when_images_recorded(
     entry = await _setup(hass, fake_companion.port, **{CONF_BUTTON_IMAGES: True})
     issue = ir.async_get(hass).async_get_issue(DOMAIN, f"images_recorded_{entry.entry_id}")
     assert issue is not None
-    assert issue.translation_placeholders["glob"] == "image.companion_test_*_image"
+    # One image entity: no common prefix yet, so the device name is used.
+    assert issue.translation_placeholders["glob"] == "image.companion_test_*"
     assert issue.translation_placeholders["entities"] == "      - image.companion_test_camera_1_image"
 
     # Turning images off clears it.
@@ -193,7 +194,7 @@ async def test_recorder_notice_when_images_recorded(
     assert ir.async_get(hass).async_get_issue(DOMAIN, f"images_recorded_{entry.entry_id}") is None
 
 
-@pytest.mark.parametrize("recorder_config", [{"exclude": {"entity_globs": ["image.companion_test_*_image"]}}])
+@pytest.mark.parametrize("recorder_config", [{"exclude": {"entity_globs": ["image.companion_test_*"]}}])
 async def test_no_notice_when_excluded(recorder_mock, hass: HomeAssistant, fake_companion: FakeCompanion) -> None:
     from homeassistant.helpers import issue_registry as ir
 
@@ -214,3 +215,25 @@ async def test_press_via_image_entity(hass: HomeAssistant, fake_companion: FakeC
     await _wait_until(lambda: hass.states.get(IMAGE_ENTITY) is not None)
     await hass.services.async_call(DOMAIN, "press", {"entity_id": IMAGE_ENTITY}, blocking=True)
     assert fake_companion.presses == [("1/0/2", True), ("1/0/2", False)]
+
+
+def test_recorder_glob_comes_from_real_entity_ids() -> None:
+    from types import SimpleNamespace
+
+    from custom_components.bitfocus_companion.image import common_word_prefix, recorder_exclude_glob
+
+    entry = SimpleNamespace(title="Companion (Watsons-MBP-localdomain)")
+    ids = [
+        "image.dungeon_bitfocus_appletv_image",
+        "image.dungeon_bitfocus_mac_image_2",
+        "image.dungeon_bitfocus_button_1_0_0_image",
+    ]
+    # Ids were minted from the device name, not the entry title.
+    assert recorder_exclude_glob(entry, ids) == "image.dungeon_bitfocus_*"
+    # A single id has no prefix to share: the device name, then the title, stand in.
+    assert recorder_exclude_glob(entry, ids[:1], "Dungeon Bitfocus") == "image.dungeon_bitfocus_*"
+    assert recorder_exclude_glob(entry, ids[:1]) == "image.companion_watsons_mbp_localdomain_*"
+    assert recorder_exclude_glob(entry, []) == "image.companion_watsons_mbp_localdomain_*"
+    # The prefix stops on a word boundary, never mid-word.
+    assert common_word_prefix(["deck_mac_image", "deck_main_image"]) == "deck_"
+    assert common_word_prefix(["alpha", "beta"]) == ""

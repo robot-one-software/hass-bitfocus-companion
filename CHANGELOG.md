@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.4
+
+- The recorder glob in the button-images Repairs notice is derived from the
+  image entity ids that actually exist (their common prefix) instead of the
+  server title, which differs when the device was renamed before the
+  entities were created.
+
 ## 0.6.3
 
 - The button-images Repairs notice now lists the exact image entity ids of the
