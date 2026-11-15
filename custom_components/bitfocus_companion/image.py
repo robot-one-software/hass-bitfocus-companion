@@ -11,6 +11,7 @@ from typing import Any
 from homeassistant.components.image import ImageEntity
 from homeassistant.const import MATCH_ALL
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -144,6 +145,11 @@ def _check_recorder(hass: HomeAssistant, entry: CompanionConfigEntry, entity_id:
 
     if not is_entity_recorded(hass, entity_id):
         return
+    # Every image entity of this server, so the notice can be pasted as-is.
+    registry = er.async_get(hass)
+    image_ids = sorted(
+        e.entity_id for e in er.async_entries_for_config_entry(registry, entry.entry_id) if e.domain == "image"
+    ) or [entity_id]
     ir.async_create_issue(
         hass,
         DOMAIN,
@@ -151,6 +157,10 @@ def _check_recorder(hass: HomeAssistant, entry: CompanionConfigEntry, entity_id:
         is_fixable=False,
         severity=ir.IssueSeverity.WARNING,
         translation_key=ISSUE_IMAGES_RECORDED,
-        translation_placeholders={"name": entry.title, "glob": recorder_exclude_glob(entry)},
+        translation_placeholders={
+            "name": entry.title,
+            "glob": recorder_exclude_glob(entry),
+            "entities": "\n".join(f"      - {image_id}" for image_id in image_ids),
+        },
         learn_more_url="https://github.com/robot-one-software/hass-bitfocus-companion#button-images",
     )

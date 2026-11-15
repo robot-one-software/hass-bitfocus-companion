@@ -185,6 +185,7 @@ async def test_recorder_notice_when_images_recorded(
     issue = ir.async_get(hass).async_get_issue(DOMAIN, f"images_recorded_{entry.entry_id}")
     assert issue is not None
     assert issue.translation_placeholders["glob"] == "image.companion_test_*_image"
+    assert issue.translation_placeholders["entities"] == "      - image.companion_test_camera_1_image"
 
     # Turning images off clears it.
     hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_BUTTON_IMAGES: False})

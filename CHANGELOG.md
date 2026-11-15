@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.3
+
+- The button-images Repairs notice now lists the exact image entity ids of the
+  server as a paste-ready `entities:` block, alongside the glob, and says that
+  a restart is needed and what "excluded" looks like afterwards.
+
 ## 0.6.2
 
 - **Actions take entities.** *Press button*, *Button down*, *Button up* and

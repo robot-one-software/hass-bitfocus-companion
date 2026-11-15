@@ -161,7 +161,7 @@
     },
     "images_recorded": {
       "title": "Keep Companion button images out of the history database",
-      "description": "Button images for {name} are on, and Home Assistant is recording every redraw in its history database. A meter button redraws several times a second, which adds up to a lot of rows nobody looks at. Dashboards only need the live image, so exclude these entities from the recorder. Add this to configuration.yaml and restart:\n\n```yaml\nrecorder:\n  exclude:\n    entity_globs:\n      - \"{glob}\"\n```\n\nThis notice goes away on the next start once the images are no longer recorded."
+      "description": "Button images for {name} are on, and Home Assistant is recording every redraw in its history database. A meter button redraws several times a second, which adds up to a lot of rows nobody looks at. Dashboards only need the live image, so exclude these entities from the recorder.\n\nPaste this into configuration.yaml (merge it into an existing `recorder:` block if you have one) and **restart Home Assistant**. The glob covers every button image of this server, including ones you add later:\n\n```yaml\nrecorder:\n  exclude:\n    entity_globs:\n      - \"{glob}\"\n```\n\nOr, to name them exactly, these are the image entities right now:\n\n```yaml\nrecorder:\n  exclude:\n    entities:\n{entities}\n```\n\nExcluded entities still show their live state and last-changed time; only their History and Logbook stay empty. This notice goes away on the first start after the images are no longer recorded."
     }
   },
   "services": {
