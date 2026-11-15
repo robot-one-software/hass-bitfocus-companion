@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.5
+
+- The page scan no longer offers Companion's page up / page down / page
+  number keys (the catalogue picker already left them out). Pressing them
+  from Home Assistant has no effect, since they act on the surface that
+  presses them.
+
 ## 0.6.4
 
 - The recorder glob in the button-images Repairs notice is derived from the

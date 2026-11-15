@@ -60,3 +60,11 @@ def test_helpers() -> None:
     assert str(location) == "2/1/3"
     assert Location.from_sub_id("ha-2-1-3") == location
     assert Location.from_sub_id("other") is None
+
+
+def test_navigation_keys_are_recognised() -> None:
+    from custom_components.bitfocus_companion.satellite import ButtonState, Location
+
+    assert ButtonState(Location(1, 0, 0), type="PAGEUP").is_navigation is True
+    assert ButtonState(Location(1, 0, 0), type="PAGENUM", text="1").is_navigation is True
+    assert ButtonState(Location(1, 0, 0), type="BUTTON", text="CAM").is_navigation is False

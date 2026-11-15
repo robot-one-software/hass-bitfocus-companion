@@ -221,6 +221,13 @@ class ButtonState:
     image_size: int | None = None
 
     @property
+    def is_navigation(self) -> bool:
+        """Page up / page down / page number keys. They change the page of the surface
+        that presses them, and a press from Home Assistant has no surface, so they do
+        nothing here; the pickers leave them out."""
+        return self.type in ("PAGEUP", "PAGEDOWN", "PAGENUM")
+
+    @property
     def is_empty(self) -> bool:
         """True for a location with nothing on it: no text and a black background."""
         has_text = bool((self.text or "").strip())

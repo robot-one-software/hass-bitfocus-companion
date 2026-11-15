@@ -690,7 +690,9 @@ class CompanionOptionsFlow(OptionsFlow):
                     errors["base"] = "cannot_connect"
                 else:
                     self._found = {
-                        str(location): state for location, state in sorted(found.items()) if not state.is_empty
+                        str(location): state
+                        for location, state in sorted(found.items())
+                        if not state.is_empty and not state.is_navigation
                     }
                     if not self._found:
                         errors["base"] = "nothing_found"

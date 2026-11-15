@@ -69,6 +69,11 @@ open the integration's **Configure** menu:
   its text.
 - **Scan a page for buttons** is the fallback when Companion's admin API is not
   reachable: it subscribes to every position on one page and lists what it finds.
+
+Companion's page up / page down / page number keys are left out of both lists:
+they change the page of the surface that presses them, and a press from Home
+Assistant has no surface, so they would do nothing. If you added one by
+position earlier, remove it under *Remove buttons*.
 - **Add one button by position** takes a page, row and column (rows and columns
   start at 0, pages at 1) and an optional name.
 
