@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.1
+
+- **Brand icon.** The integration now ships Companion's icon, so it shows
+  in HACS and in Home Assistant 2026.3 or newer.
+- **One-click install.** The README has *Open in HACS* and *Add integration*
+  buttons.
+- HACS and hassfest validation run on every push, ahead of the request to
+  list the integration in HACS by default.
+
 ## 0.7.0
 
 - **Automatic sync (opt-in).** *Entity settings* can add a button entity for

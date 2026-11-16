@@ -13,6 +13,9 @@ already built.
 Built by the [Dashable](https://dashable.app) team. Community project, not
 affiliated with Bitfocus.
 
+[![Open your Home Assistant instance and open this repository inside HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=robot-one-software&repository=hass-bitfocus-companion&category=integration)
+[![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=bitfocus_companion)
+
 ---
 
 ## What you get
@@ -49,12 +52,21 @@ on your network; nothing goes through the cloud.
 
 ## Install
 
-1. In HACS choose **Custom repositories**, add this repository as an
-   **Integration**, then download **Bitfocus Companion**.
+1. Open the repository in HACS with the button below, or search HACS for
+   *Bitfocus Companion*. Then click **Download**.
+
+   [![Open your Home Assistant instance and open this repository inside HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=robot-one-software&repository=hass-bitfocus-companion&category=integration)
+
+   If neither finds it, choose **Custom repositories** in HACS and add
+   `https://github.com/robot-one-software/hass-bitfocus-companion` as an
+   **Integration**.
 2. Restart Home Assistant.
 3. Companion usually shows up on its own under **Settings → Devices & services**
-   as a discovered device. Click **Configure**. If it does not appear, click
-   **Add integration**, search for *Bitfocus Companion* and enter the host.
+   as a discovered device. Click **Configure**. If it does not appear, use the
+   button below or click **Add integration**, search for *Bitfocus Companion*
+   and enter the host.
+
+   [![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=bitfocus_companion)
 
 Several Companion servers can be added; each one is its own device.
 
@@ -291,4 +303,7 @@ real Companion is needed.
 
 ## License
 
-MIT. Companion is a trademark of Bitfocus AS.
+MIT. Companion is a trademark of Bitfocus AS. The integration icon is the
+Companion application icon, taken from the MIT-licensed
+[bitfocus/companion](https://github.com/bitfocus/companion) repository and used
+to identify what this integration connects to.
