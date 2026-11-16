@@ -139,7 +139,7 @@
       "invalid_variable": "Could not read these as variable names: {missing}. Use label:name, for example RCV:combo1_livelevelL.",
       "variables_not_found": "Companion does not know these variables: {missing}. Check the spelling in Companion's Variables tab.",
       "catalog_unavailable": "Could not read the variable list from Companion's admin API at {url}. Check the HTTP API settings, or use 'Add variables by name'.",
-      "nothing_matched": "No variables on {label} match the filter '{filter}'.",
+      "nothing_matched": "No variables on {label} match the filter “{filter}”.",
       "too_many": "{count} variables on {label} is too many to list. Type part of a name in the filter to narrow it down.",
       "nothing_missing": "Every Companion button is already in Home Assistant."
     }
