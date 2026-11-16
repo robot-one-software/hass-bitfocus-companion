@@ -1,14 +1,14 @@
 {
   "domain": "bitfocus_companion",
   "name": "Bitfocus Companion",
+  "after_dependencies": [
+    "recorder"
+  ],
   "codeowners": [
     "@robot-one-software"
   ],
   "config_flow": true,
   "dependencies": [],
-  "after_dependencies": [
-    "recorder"
-  ],
   "documentation": "https://github.com/robot-one-software/hass-bitfocus-companion",
   "integration_type": "hub",
   "iot_class": "local_push",
